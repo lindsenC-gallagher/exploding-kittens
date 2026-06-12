@@ -48,20 +48,31 @@ pnpm test:e2e     # Playwright — realtime lobby + game across two players
 
 ## Deploy (Cloudflare)
 
-Pushing to `main` auto-deploys via `.github/workflows/deploy.yml`:
+A **single Worker** serves everything: the built React app (as static assets), the
+`/api` routes, and the `GameRoom` Durable Object. One deploy ships the whole game,
+and the WebSocket is same-origin (no CORS, no separate frontend host).
 
-1. **test** — unit tests + typecheck
-2. **deploy-worker** — `wrangler deploy` (Worker + Durable Object)
-3. **deploy-web** — build with `VITE_API_BASE` → `wrangler pages deploy`
+Build then deploy:
 
-Configure these in the GitHub repo:
+```bash
+pnpm --filter @ek/web build           # produces apps/web/dist (served as assets)
+pnpm --filter @ek/worker exec wrangler deploy
+```
 
-- Secrets: `CLOUDFLARE_API_TOKEN` (Workers + Pages edit), `CLOUDFLARE_ACCOUNT_ID`
-- Variable: `VITE_API_BASE` — the deployed Worker origin
-  (e.g. `https://exploding-kittens-worker.<subdomain>.workers.dev`)
+### Auto-deploy on push
 
-The client reads `VITE_API_BASE` to reach the Worker (REST + WebSocket) cross-origin in
-production; in dev it's unset and uses the same-origin Vite proxy.
+Use Cloudflare's **native Git integration** (Workers Builds) — connect the repo in the
+dashboard (Workers & Pages → the `exploding-kittens` Worker → Settings → Builds):
+
+- Root directory: `apps/worker`
+- Build command: `pnpm install && pnpm --filter @ek/shared build && pnpm --filter @ek/web build`
+- Deploy command: `npx wrangler deploy`
+
+`.github/workflows/deploy.yml` is intentionally **CI-only** (typecheck + unit tests) so
+there's no double-deploy and no Cloudflare secrets stored in GitHub.
+
+> The client talks to `/api` same-origin by default. `VITE_API_BASE` is an optional
+> override only needed if you ever split the frontend onto a different host.
 
 ## Game rules implemented
 

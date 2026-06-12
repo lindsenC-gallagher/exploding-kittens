@@ -1,24 +1,22 @@
-name: Deploy to Cloudflare
+name: CI
 
-# Auto-deploy on every push to main:
-#  - the Worker + GameRoom Durable Object (wrangler deploy)
-#  - the React app to Cloudflare Pages (wrangler pages deploy)
+# Continuous integration only: lint-level typecheck + unit tests on every push/PR.
 #
-# Required repository secrets:
-#   CLOUDFLARE_API_TOKEN   - token with Workers + Pages edit permissions
-#   CLOUDFLARE_ACCOUNT_ID  - your Cloudflare account id
-# Required repository variable (Settings > Variables):
-#   VITE_API_BASE          - the deployed Worker origin, e.g.
-#                            https://exploding-kittens-worker.<subdomain>.workers.dev
+# Production deploys are handled by Cloudflare's native Git integration
+# (Workers Builds), not from here — so there are no Cloudflare secrets in GitHub
+# and no risk of double-deploying. Configure it once in the Cloudflare dashboard
+# (Workers & Pages > the "exploding-kittens" Worker > Settings > Builds > Connect repo):
+#   - Build command:  pnpm install && pnpm --filter @ek/shared build && pnpm --filter @ek/web build
+#   - Deploy command: npx wrangler deploy
+#   - Root directory: apps/worker   (where wrangler.toml lives)
+# The single Worker serves the React app (static assets) + /api + the GameRoom
+# Durable Object, so one deploy ships everything.
 
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
-
-concurrency:
-  group: deploy-${{ github.ref }}
-  cancel-in-progress: true
 
 jobs:
   test:
@@ -35,43 +33,3 @@ jobs:
         run: pnpm --filter @ek/shared test
       - name: Typecheck
         run: pnpm -r typecheck
-
-  deploy-worker:
-    needs: test
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Deploy Worker + Durable Object
-        run: pnpm --filter @ek/worker exec wrangler deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-
-  deploy-web:
-    needs: deploy-worker
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: pnpm
-      - run: pnpm install --frozen-lockfile
-      - name: Build web (points at the deployed Worker)
-        run: pnpm --filter @ek/web build
-        env:
-          VITE_API_BASE: ${{ vars.VITE_API_BASE }}
-      - name: Deploy to Cloudflare Pages
-        run: >
-          pnpm --filter @ek/web exec wrangler pages deploy dist
-          --project-name=exploding-kittens --branch=main
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

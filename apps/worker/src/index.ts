@@ -2,6 +2,8 @@ import { GameRoom } from './GameRoom.js';
 
 export interface Env {
   GAME_ROOM: DurableObjectNamespace;
+  /** Static-asset store binding (the built React app). */
+  ASSETS: Fetcher;
 }
 
 const CORS = {
@@ -32,30 +34,37 @@ export default {
     const url = new URL(request.url);
     const path = url.pathname;
 
-    if (request.method === 'OPTIONS') {
-      return new Response(null, { headers: CORS });
+    // Backend API + realtime WebSocket. Everything else falls through to the
+    // static React app (served by the ASSETS binding, SPA fallback configured).
+    if (path.startsWith('/api/')) {
+      if (request.method === 'OPTIONS') {
+        return new Response(null, { headers: CORS });
+      }
+
+      // Create a new room: returns a fresh room code.
+      if (request.method === 'POST' && path === '/api/rooms') {
+        const code = generateRoomCode();
+        return json({ code });
+      }
+
+      // WebSocket upgrade for a specific room: /api/rooms/:code/ws
+      const wsMatch = path.match(/^\/api\/rooms\/([A-Za-z0-9]+)\/ws$/);
+      if (wsMatch) {
+        const code = wsMatch[1].toUpperCase();
+        const id = env.GAME_ROOM.idFromName(code);
+        const stub = env.GAME_ROOM.get(id);
+        // Forward the original request (with Upgrade header + query string) to the DO.
+        const forward = new Request(`https://room/${code}/ws${url.search}`, request);
+        return stub.fetch(forward);
+      }
+
+      if (path === '/api/health') return json({ ok: true });
+
+      return new Response('Not found', { status: 404, headers: CORS });
     }
 
-    // Create a new room: returns a fresh room code.
-    if (request.method === 'POST' && path === '/api/rooms') {
-      const code = generateRoomCode();
-      return json({ code });
-    }
-
-    // WebSocket upgrade for a specific room: /api/rooms/:code/ws
-    const wsMatch = path.match(/^\/api\/rooms\/([A-Za-z0-9]+)\/ws$/);
-    if (wsMatch) {
-      const code = wsMatch[1].toUpperCase();
-      const id = env.GAME_ROOM.idFromName(code);
-      const stub = env.GAME_ROOM.get(id);
-      // Forward the original request (with Upgrade header + query string) to the DO.
-      const forward = new Request(`https://room/${code}/ws${url.search}`, request);
-      return stub.fetch(forward);
-    }
-
-    if (path === '/api/health') return json({ ok: true });
-
-    return new Response('Not found', { status: 404, headers: CORS });
+    // Serve the built React app (and SPA-route fallback to index.html).
+    return env.ASSETS.fetch(request);
   },
 };
 
