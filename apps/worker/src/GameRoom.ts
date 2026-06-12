@@ -2,6 +2,7 @@ import {
   addPlayer,
   applyAction,
   createLobby,
+  parseClientMessage,
   projectView,
   startGame,
   RULES,
@@ -24,8 +25,20 @@ function cryptoSeed(): number {
   return crypto.getRandomValues(new Uint32Array(1))[0];
 }
 
+/** Max client frames accepted per socket per second; excess is dropped. */
+const MAX_MESSAGES_PER_SECOND = 30;
+
 function clampName(name: unknown): string {
-  return (typeof name === 'string' ? name : 'Player').trim().slice(0, 20) || 'Player';
+  // Strip control characters, then trim and cap length. Defense-in-depth for
+  // display names (the React client also escapes on render).
+  const raw = typeof name === 'string' ? name : '';
+  let cleaned = '';
+  for (const ch of raw) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (code >= 0x20 && code !== 0x7f) cleaned += ch;
+  }
+  cleaned = cleaned.trim().slice(0, 20);
+  return cleaned || 'Player';
 }
 
 /**
@@ -46,6 +59,8 @@ export class GameRoom {
   private loaded = false;
   /** Current Nope-window deadline (epoch ms) for the client countdown, or null. */
   private nopeDeadline: number | null = null;
+  /** Per-socket fixed-window message counters for rate limiting. */
+  private msgWindows = new WeakMap<WebSocket, { count: number; start: number }>();
 
   constructor(ctx: DurableObjectState, _env: Env) {
     this.ctx = ctx;
@@ -84,22 +99,28 @@ export class GameRoom {
     const pid = url.searchParams.get('pid');
     const token = url.searchParams.get('token') ?? '';
     const name = clampName(url.searchParams.get('name'));
-    if (!pid) return new Response('Missing pid', { status: 400 });
+    if (!pid || pid.length > 64) return new Response('Missing pid', { status: 400 });
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('Expected websocket', { status: 426 });
     }
 
-    // Authenticate the seat. A pid's first connection mints a secret token; later
-    // connections must present it. A different token is only allowed to "reclaim"
-    // the seat when no live socket holds it (e.g. after a disconnect), which
-    // prevents impersonating a player who is currently connected.
+    // Authenticate the seat. The first connection for a pid mints a secret token;
+    // every later connection MUST present it — there is no token-less "reclaim".
+    // A legitimate client that loses its token also loses its pid (both live in
+    // localStorage), so only an impersonator would arrive with a known pid and no
+    // token. New seats are handed out only for an open lobby, so connections that
+    // are neither a known seat nor an eligible new player are refused (no snooping
+    // on in-progress rooms, and the token map can't grow past the lobby cap).
     const existing = this.tokens[pid];
     let issuedToken: string;
-    if (existing && token === existing) {
+    if (existing) {
+      if (token !== existing) return new Response('Seat in use', { status: 403 });
       issuedToken = existing;
-    } else if (existing && this.hasLiveSocket(pid)) {
-      return new Response('Seat in use', { status: 403 });
     } else {
+      const isPlayer = this.game.players.some((p) => p.id === pid);
+      const lobbyHasRoom =
+        this.game.phase === 'lobby' && this.game.players.length < RULES.maxPlayers;
+      if (!isPlayer && !lobbyHasRoom) return new Response('Room unavailable', { status: 403 });
       issuedToken = crypto.randomUUID();
       this.tokens[pid] = issuedToken;
       await this.ctx.storage.put('tokens', this.tokens);
@@ -137,16 +158,25 @@ export class GameRoom {
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
     await this.load();
-    if (typeof raw !== 'string' || raw.length > 4096) return;
-    let msg: ClientMessage;
-    try {
-      msg = JSON.parse(raw) as ClientMessage;
-    } catch {
-      return;
-    }
+    if (typeof raw !== 'string') return;
+    if (!this.allowMessage(ws)) return; // per-socket rate limit (drop floods)
+    const msg = parseClientMessage(raw);
+    if (!msg) return; // malformed / unknown frame — ignore rather than crash
     const meta = ws.deserializeAttachment() as SocketMeta | null;
     if (!meta) return;
     await this.dispatch(ws, meta.playerId, msg);
+  }
+
+  /** Fixed-window per-socket rate limit; drops frames above the cap. */
+  private allowMessage(ws: WebSocket): boolean {
+    const now = Date.now();
+    const w = this.msgWindows.get(ws);
+    if (!w || now - w.start >= 1000) {
+      this.msgWindows.set(ws, { count: 1, start: now });
+      return true;
+    }
+    w.count += 1;
+    return w.count <= MAX_MESSAGES_PER_SECOND;
   }
 
   async webSocketClose(ws: WebSocket): Promise<void> {
@@ -256,7 +286,14 @@ export class GameRoom {
     ws: WebSocket | null,
     action: Parameters<typeof applyAction>[1],
   ): Promise<void> {
-    const r = applyAction(this.game, action, { rngSeed: cryptoSeed() });
+    let r: ReturnType<typeof applyAction>;
+    try {
+      r = applyAction(this.game, action, { rngSeed: cryptoSeed() });
+    } catch {
+      // A malformed action must never tear down the room; treat it as illegal.
+      if (ws) this.send(ws, { t: 'error', message: 'Invalid action' });
+      return;
+    }
     if (!r.ok) {
       if (ws) this.send(ws, { t: 'error', message: r.error });
       return;

@@ -24,5 +24,5 @@ export function roomSocketUrl(code: string, pid: string, name: string, token: st
     secure = u.protocol === 'https:';
   }
   const proto = secure ? 'wss' : 'ws';
-  return `${proto}://${host}/api/rooms/${code}/ws?${params.toString()}`;
+  return `${proto}://${host}/api/rooms/${encodeURIComponent(code)}/ws?${params.toString()}`;
 }

@@ -3,4 +3,5 @@ export * from './rng.js';
 export * from './state.js';
 export * from './engine.js';
 export * from './protocol.js';
+export * from './validate.js';
 export * from './view.js';

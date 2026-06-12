@@ -528,10 +528,9 @@ function handleDraw(
   if (card.type === CardType.ExplodingKitten) {
     const hasDefuse = player.hand.some((c) => c.type === CardType.Defuse);
     if (hasDefuse) {
-      state.awaiting = { type: 'defuse_or_explode', playerId: player.id, explodingCardId: card.id };
-      // Hold the EK aside on the discard pile reference via awaiting; keep it out
-      // of hand. We park it on discard temporarily and remove on defuse/explode.
-      state.discardPile.push(card);
+      // Hold the kitten off-pile on the awaiting record so it never leaks into
+      // the public discard view while the player decides whether to defuse.
+      state.awaiting = { type: 'defuse_or_explode', playerId: player.id, explodingCard: card };
       return null;
     }
     // No defuse: explode.
@@ -577,9 +576,8 @@ function handleDefuse(
   player.hand = player.hand.filter((c) => c.id !== action.cardId);
   state.discardPile.push(defuse);
 
-  // Pull the EK back off the discard pile and reinsert it at chosen position.
-  const ekIdx = state.discardPile.findIndex((c) => c.id === awaiting.explodingCardId);
-  const [ek] = state.discardPile.splice(ekIdx, 1);
+  // Reinsert the held-aside Exploding Kitten at the chosen (clamped) position.
+  const ek = awaiting.explodingCard;
   const pos = Math.max(0, Math.min(action.insertPosition, state.drawPile.length));
   state.drawPile.splice(pos, 0, ek);
 

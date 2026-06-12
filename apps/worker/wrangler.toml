@@ -1,7 +1,14 @@
 name = "exploding-kittens"
 main = "src/index.ts"
-compatibility_date = "2024-12-01"
-compatibility_flags = ["nodejs_compat"]
+# Kept current so the Worker runs under recent, hardened runtime defaults.
+compatibility_date = "2025-09-01"
+# nodejs_compat dropped: the Worker uses only Web/Workers APIs (crypto, URL,
+# WebSocketPair, Durable Objects), so the Node polyfills are unnecessary surface.
+
+# Optional: lock CORS + the WebSocket upgrade to your exact origin(s). When unset,
+# the Worker allows localhost and *.pages.dev / *.workers.dev (see src/index.ts).
+# [vars]
+# ALLOWED_ORIGINS = "https://your-app.example.com"
 
 # Serve the built React app as static assets from this same Worker. The Worker
 # runs first (so /api/* and the WebSocket upgrade hit our code); everything else

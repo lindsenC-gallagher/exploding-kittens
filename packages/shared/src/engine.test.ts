@@ -9,6 +9,7 @@ import {
 } from './engine.js';
 import type { Card } from './cards.js';
 import type { GameState } from './state.js';
+import { projectView } from './view.js';
 
 /** Build a lobby with `n` named players (p0..pn-1). */
 function lobbyWith(n: number): GameState {
@@ -441,5 +442,25 @@ describe('win condition', () => {
     state = apply(state, { type: 'draw', playerId: me });
     expect(state.phase).toBe('gameOver');
     expect(state.winnerId).toBe(state.players.find((p) => p.id !== me)!.id);
+  });
+});
+
+describe('security: hidden-information redaction', () => {
+  it("does not leak the drawn Exploding Kitten into others' views during a defuse", () => {
+    let state = started(3);
+    const me = current(state).id;
+    const other = state.players.find((p) => p.id !== me)!.id;
+    const ek: Card = { id: 'ek-secret', type: CardType.ExplodingKitten };
+    state = { ...state, drawPile: [ek, ...state.drawPile] };
+    state = apply(state, { type: 'draw', playerId: me });
+    expect(state.awaiting?.type).toBe('defuse_or_explode');
+
+    // The kitten is held off-pile, so it never appears on the public discard.
+    expect(state.discardPile.some((c) => c.id === 'ek-secret')).toBe(false);
+    const view = projectView(state, 'ABCDEF', other, null);
+    expect(view.discardPile.some((c) => c.id === 'ek-secret')).toBe(false);
+    expect(view.discardTop?.id).not.toBe('ek-secret');
+    // The opponent is not shown the defuse prompt (that's only for the drawer).
+    expect(view.prompt).toBeNull();
   });
 });

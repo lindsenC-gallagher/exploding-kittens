@@ -1,0 +1,11 @@
+# Security headers for the Cloudflare Pages deployment of the SPA.
+# (When the SAME app is served by the Worker, src/index.ts applies its own,
+# slightly stricter, same-origin CSP — connect-src 'self'.)
+#
+# The Pages-hosted SPA talks cross-origin to the Worker, so connect-src must
+# allow the Worker origin. Narrow these to your exact origins in production.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: DENY
+  Referrer-Policy: no-referrer
+  Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://*.workers.dev wss://*.workers.dev; base-uri 'none'; object-src 'none'; frame-ancestors 'none'

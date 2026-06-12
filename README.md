@@ -74,6 +74,34 @@ there's no double-deploy and no Cloudflare secrets stored in GitHub.
 > The client talks to `/api` same-origin by default. `VITE_API_BASE` is an optional
 > override only needed if you ever split the frontend onto a different host.
 
+## Security model
+
+The game is anonymous (no accounts), but it defends the things that matter for a
+fair realtime game:
+
+- **Per-seat auth.** On first join, a player's browser-generated id (`pid`) is bound
+  to a server-minted secret **token** (sent once over the socket, stored per-room in
+  `localStorage`). Every later connection must present that token — `pid`s are public
+  (broadcast to the room), so this stops anyone from impersonating another seat, reading
+  their hand, or acting as them. There is no token-less "reclaim".
+- **Server-authoritative + redacted views.** The Durable Object holds the only true
+  state and projects a per-player view; other hands and the draw-pile order never leave
+  the server. A drawn Exploding Kitten is held off-pile during a defuse, so it isn't
+  leaked on the public discard.
+- **Unpredictable shuffles.** Deck order and "random" steals are seeded from
+  `crypto.getRandomValues` on the server, not from public game state — the deck can't be
+  predicted or brute-forced.
+- **Validated input.** Every WebSocket frame is runtime-validated (`parseClientMessage`)
+  and the engine call is wrapped in `try/catch`, so malformed messages are dropped, never
+  crashing the room. Frames are size-capped and per-socket rate-limited.
+- **Browser hardening.** The Worker serves the SPA with a Content-Security-Policy plus
+  `nosniff` / `no-referrer` / `frame-ancestors 'none'`; API responses are `no-store` with
+  a locked-down CSP.
+- **Origin control.** CORS and the WebSocket upgrade honor an origin allowlist. By default
+  it permits `localhost` and `*.pages.dev` / `*.workers.dev`; set the `ALLOWED_ORIGINS`
+  Worker var (comma-separated) to your exact origin(s) in production. Room codes are
+  validated and drawn from a ~1e9 space to resist enumeration.
+
 ## Game rules implemented
 
 Base deck (56 cards): 4 Exploding Kitten, 6 Defuse, 5 Nope, 4 Attack, 4 Skip, 4 Favor,

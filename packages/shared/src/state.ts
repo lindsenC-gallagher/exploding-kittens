@@ -42,7 +42,11 @@ export type AwaitingChoice =
       /** A player drew an Exploding Kitten and must Defuse or explode. */
       type: 'defuse_or_explode';
       playerId: string;
-      explodingCardId: string;
+      /**
+       * The drawn Exploding Kitten, held off-pile while the choice is pending so
+       * it never leaks into the public discard view before it resolves.
+       */
+      explodingCard: Card;
     }
   | {
       /** Target of a resolved Favor must give a card of their choice. */
