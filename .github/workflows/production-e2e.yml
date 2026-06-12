@@ -1,30 +1,24 @@
 name: Production E2E
 
-# Runs the Playwright multi-player e2e suite against the LIVE production URL after
-# a deploy. Deploys are done by Cloudflare's native Git integration (Workers
-# Builds); when that deployment is marked successful on GitHub it emits a
-# `deployment_status` event, which triggers this workflow. Also runnable manually.
+# Manual, on-demand Playwright multi-player e2e run against ANY live URL.
 #
-# If your Cloudflare integration does not create GitHub deployments (so the
-# deployment_status trigger never fires), switch the trigger to:
-#   on: { push: { branches: [main] }, workflow_dispatch: {} }
-# The health-wait step below already tolerates the deploy still being in flight.
+# The automatic post-deploy e2e run lives in the "CI & Deploy" workflow
+# (deploy.yml: test -> deploy -> e2e). This workflow is the standalone tool for
+# pointing the same suite at an arbitrary URL — production, a preview, etc.
+# The health-wait step below tolerates a deploy still being in flight.
 
 on:
-  deployment_status:
   workflow_dispatch:
     inputs:
       base_url:
         description: 'Base URL to test against'
         default: 'https://exploding-kittens.lindsen-cruz.workers.dev'
 
-# Only run for successful deployments (or a manual dispatch).
 jobs:
   e2e:
-    if: ${{ github.event_name == 'workflow_dispatch' || github.event.deployment_status.state == 'success' }}
     runs-on: ubuntu-latest
     env:
-      E2E_BASE_URL: ${{ github.event.inputs.base_url || github.event.deployment_status.environment_url || 'https://exploding-kittens.lindsen-cruz.workers.dev' }}
+      E2E_BASE_URL: ${{ github.event.inputs.base_url || 'https://exploding-kittens.lindsen-cruz.workers.dev' }}
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4

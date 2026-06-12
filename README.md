@@ -61,15 +61,17 @@ pnpm --filter @ek/worker exec wrangler deploy
 
 ### Auto-deploy on push
 
-Use Cloudflare's **native Git integration** (Workers Builds) — connect the repo in the
-dashboard (Workers & Pages → the `exploding-kittens` Worker → Settings → Builds):
+Deploys run from **GitHub Actions** (`.github/workflows/deploy.yml`). On every push to
+`main` the workflow runs `test → deploy → e2e`: unit tests + typecheck, then build and
+`wrangler deploy` the Worker, then the Playwright suite against the live production URL.
 
-- Root directory: `apps/worker`
-- Build command: `pnpm install && pnpm --filter @ek/shared build && pnpm --filter @ek/web build`
-- Deploy command: `npx wrangler deploy`
+Set two repo secrets (Settings → Secrets and variables → Actions):
 
-`.github/workflows/deploy.yml` is intentionally **CI-only** (typecheck + unit tests) so
-there's no double-deploy and no Cloudflare secrets stored in GitHub.
+- `CLOUDFLARE_API_TOKEN` — a token using the **Edit Cloudflare Workers** template
+- `CLOUDFLARE_ACCOUNT_ID` — your Cloudflare account id
+
+> **Do not also connect Cloudflare's native Git integration (Workers Builds)** — if both
+> are active you'll deploy twice per push. GitHub Actions is the single deploy path.
 
 > The client talks to `/api` same-origin by default. `VITE_API_BASE` is an optional
 > override only needed if you ever split the frontend onto a different host.
