@@ -3,8 +3,6 @@ import {
   applyAction,
   createLobby,
   projectView,
-  shuffle,
-  createRng,
   startGame,
   RULES,
   CardType,
@@ -19,17 +17,35 @@ interface SocketMeta {
   playerId: string;
 }
 
+/** A scheduled timer's purpose, so the alarm knows what to do when it fires. */
+type TimerKind = 'nope' | 'awaiting' | 'turn';
+
+function cryptoSeed(): number {
+  return crypto.getRandomValues(new Uint32Array(1))[0];
+}
+
+function clampName(name: unknown): string {
+  return (typeof name === 'string' ? name : 'Player').trim().slice(0, 20) || 'Player';
+}
+
 /**
  * One Durable Object instance per room code. Holds the authoritative GameState,
  * owns every connected WebSocket, runs the engine, and broadcasts redacted
- * per-player views. The Nope window is implemented with a DO alarm so it
- * survives hibernation.
+ * per-player views.
+ *
+ * A single DO alarm serves three mutually-exclusive timed states: the Nope
+ * window, an unanswered forced choice (Favor/Defuse), and a disconnected
+ * current player's turn. The alarm is re-armed on load so it survives hibernation.
  */
 export class GameRoom {
   private ctx: DurableObjectState;
   private game!: GameState;
   private roomCode = '';
+  /** Per-seat secret tokens: playerId -> token. Authenticates reconnects. */
+  private tokens: Record<string, string> = {};
   private loaded = false;
+  /** Current Nope-window deadline (epoch ms) for the client countdown, or null. */
+  private nopeDeadline: number | null = null;
 
   constructor(ctx: DurableObjectState, _env: Env) {
     this.ctx = ctx;
@@ -37,16 +53,23 @@ export class GameRoom {
 
   private async load(): Promise<void> {
     if (this.loaded) return;
-    const stored = await this.ctx.storage.get<GameState>('game');
-    const code = await this.ctx.storage.get<string>('code');
-    this.game = stored ?? createLobby('');
-    this.roomCode = code ?? '';
+    this.game = (await this.ctx.storage.get<GameState>('game')) ?? createLobby('');
+    this.roomCode = (await this.ctx.storage.get<string>('code')) ?? '';
+    this.tokens = (await this.ctx.storage.get<Record<string, string>>('tokens')) ?? {};
+    const kind = await this.ctx.storage.get<TimerKind>('timerKind');
+    this.nopeDeadline = kind === 'nope' ? ((await this.ctx.storage.get<number>('timerDeadline')) ?? null) : null;
     this.loaded = true;
+    // Re-arm a timer if a timed state survived hibernation without a live alarm.
+    if (this.game.pending || this.game.awaiting || this.disconnectedCurrentPlayer()) {
+      await this.settle();
+    }
   }
 
   private async persist(): Promise<void> {
     await this.ctx.storage.put('game', this.game);
   }
+
+  // ---- HTTP / WebSocket upgrade -------------------------------------------
 
   async fetch(request: Request): Promise<Response> {
     await this.load();
@@ -59,25 +82,39 @@ export class GameRoom {
     }
 
     const pid = url.searchParams.get('pid');
-    const name = (url.searchParams.get('name') ?? 'Player').slice(0, 20);
+    const token = url.searchParams.get('token') ?? '';
+    const name = clampName(url.searchParams.get('name'));
     if (!pid) return new Response('Missing pid', { status: 400 });
-
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('Expected websocket', { status: 426 });
+    }
+
+    // Authenticate the seat. A pid's first connection mints a secret token; later
+    // connections must present it. A different token is only allowed to "reclaim"
+    // the seat when no live socket holds it (e.g. after a disconnect), which
+    // prevents impersonating a player who is currently connected.
+    const existing = this.tokens[pid];
+    let issuedToken: string;
+    if (existing && token === existing) {
+      issuedToken = existing;
+    } else if (existing && this.hasLiveSocket(pid)) {
+      return new Response('Seat in use', { status: 403 });
+    } else {
+      issuedToken = crypto.randomUUID();
+      this.tokens[pid] = issuedToken;
+      await this.ctx.storage.put('tokens', this.tokens);
     }
 
     const pair = new WebSocketPair();
     const client = pair[0];
     const server = pair[1];
 
-    // Use hibernation; stash the player id on the socket.
     this.ctx.acceptWebSocket(server);
     server.serializeAttachment({ playerId: pid } satisfies SocketMeta);
 
     await this.handleJoin(pid, name);
-    // Send initial state to the newcomer.
     this.sendView(server, pid);
-    this.send(server, { t: 'joined', youId: pid, roomCode: this.roomCode });
+    this.send(server, { t: 'joined', youId: pid, roomCode: this.roomCode, token: issuedToken });
 
     return new Response(null, { status: 101, webSocket: client });
   }
@@ -94,12 +131,13 @@ export class GameRoom {
       if (r.ok) this.game = r.state;
     }
     await this.persist();
+    await this.settle();
     this.broadcastViews();
   }
 
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
     await this.load();
-    if (typeof raw !== 'string') return;
+    if (typeof raw !== 'string' || raw.length > 4096) return;
     let msg: ClientMessage;
     try {
       msg = JSON.parse(raw) as ClientMessage;
@@ -115,19 +153,23 @@ export class GameRoom {
     await this.load();
     const meta = ws.deserializeAttachment() as SocketMeta | null;
     if (!meta) return;
-    const player = this.game.players.find((p) => p.id === meta.playerId);
-    if (player) {
-      player.connected = false;
-      // In the lobby, drop the player entirely.
-      if (this.game.phase === 'lobby') {
-        this.game.players = this.game.players.filter((p) => p.id !== meta.playerId);
-        if (this.game.hostId === meta.playerId) {
-          this.game.hostId = this.game.players[0]?.id ?? '';
-        }
-      }
-      await this.persist();
-      this.broadcastViews();
+    // If the player still has another live socket (e.g. a second tab), do nothing.
+    if (this.hasLiveSocket(meta.playerId, ws)) return;
+    await this.markDisconnected(meta.playerId);
+  }
+
+  private async markDisconnected(pid: string): Promise<void> {
+    const player = this.game.players.find((p) => p.id === pid);
+    if (!player) return;
+    player.connected = false;
+    if (this.game.phase === 'lobby') {
+      // In the lobby, drop the player entirely and reassign host if needed.
+      this.game.players = this.game.players.filter((p) => p.id !== pid);
+      if (this.game.hostId === pid) this.game.hostId = this.game.players[0]?.id ?? '';
     }
+    await this.persist();
+    await this.settle();
+    this.broadcastViews();
   }
 
   // ---- Message dispatch ----------------------------------------------------
@@ -135,7 +177,7 @@ export class GameRoom {
   private async dispatch(ws: WebSocket, pid: string, msg: ClientMessage): Promise<void> {
     switch (msg.t) {
       case 'join':
-        await this.handleJoin(pid, msg.name);
+        await this.handleJoin(pid, clampName(msg.name));
         return;
 
       case 'set_ready': {
@@ -154,8 +196,7 @@ export class GameRoom {
           this.send(ws, { t: 'error', message: 'Need at least 2 players' });
           return;
         }
-        const seed = crypto.getRandomValues(new Uint32Array(1))[0];
-        const r = startGame(this.game, seed);
+        const r = startGame(this.game, cryptoSeed());
         if (!r.ok) {
           this.send(ws, { t: 'error', message: r.error });
           return;
@@ -163,11 +204,12 @@ export class GameRoom {
         this.game = r.state;
         await this.persist();
         this.broadcastEvents(r.events);
+        await this.settle();
         this.broadcastViews();
         return;
       }
 
-      case 'play': {
+      case 'play':
         await this.runAction(ws, {
           type: 'play',
           playerId: pid,
@@ -177,17 +219,11 @@ export class GameRoom {
           namedCard: msg.namedCard,
           discardCardId: msg.discardCardId,
         });
-        // Open / skip the Nope window depending on whether anyone can Nope.
-        await this.maybeOpenNopeWindow();
         return;
-      }
 
-      case 'nope': {
+      case 'nope':
         await this.runAction(ws, { type: 'nope', playerId: pid, cardId: msg.cardId });
-        // Reset the window on each Nope so others can respond / re-Nope.
-        await this.maybeOpenNopeWindow();
         return;
-      }
 
       case 'draw':
         await this.runAction(ws, { type: 'draw', playerId: pid });
@@ -207,84 +243,157 @@ export class GameRoom {
         return;
 
       case 'leave': {
-        this.game.players = this.game.players.filter((p) => p.id !== pid);
-        await this.persist();
-        this.broadcastViews();
+        // Never mutate players mid-game (it would corrupt turn order / deck math).
+        // Treat an in-game leave as a disconnect; only remove in the lobby.
+        await this.markDisconnected(pid);
         return;
       }
     }
   }
 
-  private async runAction(ws: WebSocket, action: Parameters<typeof applyAction>[1]): Promise<void> {
-    const r = applyAction(this.game, action);
+  /** Apply an engine action from a client, then broadcast and (re)settle timers. */
+  private async runAction(
+    ws: WebSocket | null,
+    action: Parameters<typeof applyAction>[1],
+  ): Promise<void> {
+    const r = applyAction(this.game, action, { rngSeed: cryptoSeed() });
     if (!r.ok) {
-      this.send(ws, { t: 'error', message: r.error });
+      if (ws) this.send(ws, { t: 'error', message: r.error });
       return;
     }
     this.game = r.state;
-    this.reshuffleIfNeeded(r.events);
     await this.persist();
     this.broadcastEvents(r.events);
+    await this.settle();
     this.broadcastViews();
   }
 
+  // ---- Timers (single alarm for Nope window / awaiting / turn) -------------
+
+  private disconnectedCurrentPlayer(): boolean {
+    if (this.game.phase !== 'playing' || this.game.pending || this.game.awaiting) return false;
+    const cur = this.game.players[this.game.currentPlayerIndex];
+    return !!cur && cur.alive && !cur.connected;
+  }
+
   /**
-   * After the engine resolves a Shuffle, replace the draw-pile order with a
-   * crypto-seeded shuffle so the order stays genuinely unpredictable (the
-   * engine's pure shuffle is deterministic from public state).
+   * Decide what, if anything, needs a timer given the current state, and arm the
+   * single DO alarm accordingly. Resolves a Nope window immediately when nobody
+   * can Nope (recursing, since resolution may open a new timed state).
    */
-  private reshuffleIfNeeded(events: GameEvent[]): void {
-    if (events.some((e) => e.type === 'shuffled')) {
-      const seed = crypto.getRandomValues(new Uint32Array(1))[0];
-      this.game = { ...this.game, drawPile: shuffle(this.game.drawPile, createRng(seed)) };
+  private async settle(): Promise<void> {
+    if (this.game.pending) {
+      const actorId = this.game.pending.by;
+      const someoneCanNope = this.game.players.some(
+        (p) => p.alive && p.id !== actorId && p.connected && p.hand.some((c) => c.type === CardType.Nope),
+      );
+      if (!someoneCanNope) {
+        await this.resolvePendingNow();
+        return;
+      }
+      // Cap the total window so repeated Nopes can't stall the game forever.
+      const start = (await this.ctx.storage.get<number>('nopeStart')) ?? Date.now();
+      await this.ctx.storage.put('nopeStart', start);
+      const deadline = Math.min(Date.now() + RULES.nopeWindowMs, start + RULES.maxNopeWindowMs);
+      await this.armAlarm('nope', deadline);
+      this.nopeDeadline = deadline;
+      return;
     }
+
+    await this.ctx.storage.delete('nopeStart');
+    this.nopeDeadline = null;
+
+    if (this.game.awaiting) {
+      await this.armAlarm('awaiting', Date.now() + RULES.awaitingTimeoutMs);
+      return;
+    }
+    if (this.disconnectedCurrentPlayer()) {
+      await this.armAlarm('turn', Date.now() + RULES.turnTimeoutMs);
+      return;
+    }
+    await this.clearAlarm();
   }
 
-  // ---- Nope window via alarm ----------------------------------------------
-
-  private async maybeOpenNopeWindow(): Promise<void> {
-    if (!this.game.pending) {
-      await this.ctx.storage.deleteAlarm();
-      await this.ctx.storage.delete('nopeDeadline');
-      return;
-    }
-    // Does any *other* alive player hold a Nope? If not, resolve immediately.
-    const actorId = this.game.pending.by;
-    const someoneCanNope = this.game.players.some(
-      (p) => p.alive && p.id !== actorId && p.connected && p.hand.some((c) => c.type === CardType.Nope),
-    );
-    if (!someoneCanNope) {
-      await this.resolveNow();
-      return;
-    }
-    const deadline = Date.now() + RULES.nopeWindowMs;
-    await this.ctx.storage.put('nopeDeadline', deadline);
+  private async armAlarm(kind: TimerKind, deadline: number): Promise<void> {
+    await this.ctx.storage.put('timerKind', kind);
+    await this.ctx.storage.put('timerDeadline', deadline);
     await this.ctx.storage.setAlarm(deadline);
-    this.broadcastViews(deadline);
   }
 
-  private async resolveNow(): Promise<void> {
-    const r = applyAction(this.game, { type: 'resolve_pending' });
-    if (r.ok) {
-      this.game = r.state;
-      this.reshuffleIfNeeded(r.events);
-      await this.ctx.storage.delete('nopeDeadline');
-      await this.ctx.storage.deleteAlarm();
-      await this.persist();
-      this.broadcastEvents(r.events);
-      this.broadcastViews();
-    }
+  private async clearAlarm(): Promise<void> {
+    await this.ctx.storage.delete('timerKind');
+    await this.ctx.storage.delete('timerDeadline');
+    await this.ctx.storage.deleteAlarm();
+  }
+
+  private async resolvePendingNow(): Promise<void> {
+    const r = applyAction(this.game, { type: 'resolve_pending' }, { rngSeed: cryptoSeed() });
+    if (!r.ok) return;
+    this.game = r.state;
+    await this.ctx.storage.delete('nopeStart');
+    await this.persist();
+    this.broadcastEvents(r.events);
+    await this.settle();
+    this.broadcastViews();
   }
 
   async alarm(): Promise<void> {
     await this.load();
-    if (this.game.pending) await this.resolveNow();
+    if (this.game.pending) {
+      await this.resolvePendingNow();
+    } else if (this.game.awaiting) {
+      await this.autoResolveAwaiting();
+    } else if (this.disconnectedCurrentPlayer()) {
+      await this.autoAdvanceTurn();
+    }
+  }
+
+  /** Auto-resolve an unanswered forced choice so one player can't freeze the game. */
+  private async autoResolveAwaiting(): Promise<void> {
+    const awaiting = this.game.awaiting;
+    if (!awaiting) return;
+    const player = this.game.players.find((p) => p.id === awaiting.playerId);
+    if (!player) return;
+
+    if (awaiting.type === 'favor_give') {
+      // Give a random card on the player's behalf (a card must be given).
+      if (player.hand.length === 0) return;
+      const idx = cryptoSeed() % player.hand.length;
+      await this.runAction(null, { type: 'give_favor_card', playerId: player.id, cardId: player.hand[idx].id });
+    } else {
+      // defuse_or_explode: auto-play the Defuse (reinsert at a random spot) rather
+      // than punishing a disconnect with elimination.
+      const defuse = player.hand.find((c) => c.type === CardType.Defuse);
+      if (!defuse) return;
+      const pos = cryptoSeed() % (this.game.drawPile.length + 1);
+      await this.runAction(null, {
+        type: 'defuse',
+        playerId: player.id,
+        cardId: defuse.id,
+        insertPosition: pos,
+      });
+    }
+  }
+
+  /** A disconnected current player auto-draws to end their turn (may explode). */
+  private async autoAdvanceTurn(): Promise<void> {
+    const cur = this.game.players[this.game.currentPlayerIndex];
+    if (!cur) return;
+    await this.runAction(null, { type: 'draw', playerId: cur.id });
   }
 
   // ---- Broadcasting --------------------------------------------------------
 
   private sockets(): WebSocket[] {
     return this.ctx.getWebSockets();
+  }
+
+  private hasLiveSocket(pid: string, exclude?: WebSocket): boolean {
+    return this.sockets().some((ws) => {
+      if (ws === exclude) return false;
+      const meta = ws.deserializeAttachment() as SocketMeta | null;
+      return meta?.playerId === pid;
+    });
   }
 
   private send(ws: WebSocket, msg: ServerMessage): void {
@@ -295,20 +404,20 @@ export class GameRoom {
     }
   }
 
-  private sendView(ws: WebSocket, pid: string, deadline: number | null = null): void {
-    this.send(ws, { t: 'view', view: projectView(this.game, this.roomCode, pid, deadline) });
+  private sendView(ws: WebSocket, pid: string): void {
+    this.send(ws, { t: 'view', view: projectView(this.game, this.roomCode, pid, this.nopeDeadline) });
   }
 
-  private broadcastViews(deadline: number | null = null): void {
+  private broadcastViews(): void {
     for (const ws of this.sockets()) {
       const meta = ws.deserializeAttachment() as SocketMeta | null;
-      if (meta) this.sendView(ws, meta.playerId, deadline);
+      if (meta) this.sendView(ws, meta.playerId);
     }
   }
 
   /**
-   * Broadcast events to all players, but route See the Future privately to the
-   * viewing player only (it reveals hidden deck information).
+   * Broadcast events to all players, routing the private See the Future reveal
+   * only to the viewing player (it exposes hidden deck information).
    */
   private broadcastEvents(events: GameEvent[]): void {
     const publicEvents = events.filter((e) => e.type !== 'see_future');

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useGameSocket } from '../hooks/useGameSocket.js';
-import { getName, getPlayerId, setName as persistName } from '../lib/identity.js';
+import { getName, getPlayerId, normalizeName, setName as persistName } from '../lib/identity.js';
 import { Lobby } from '../components/Lobby.js';
 import { GameTable } from '../components/GameTable.js';
 
@@ -31,7 +31,7 @@ export function Room() {
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && nameInput.trim()) {
                   persistName(nameInput);
-                  setName(nameInput.trim());
+                  setName(normalizeName(nameInput));
                 }
               }}
             />

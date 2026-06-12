@@ -318,6 +318,116 @@ describe('Exploding Kitten & Defuse', () => {
   });
 });
 
+describe('regression: bug fixes', () => {
+  it('Attack stacks correctly after the attacked player consumes a turn (owe 1 -> next owes 3)', () => {
+    let state = started(3);
+    const p0 = current(state).id;
+    // p0 attacks -> p1 owes 2.
+    let inj = withCardInHand(state, p0, CardType.Attack);
+    state = inj.state;
+    state = apply(state, { type: 'play', playerId: p0, cardIds: [inj.cardId] });
+    state = apply(state, { type: 'resolve_pending' });
+    const p1 = current(state).id;
+    expect(state.turnsRemaining).toBe(2);
+
+    // p1 takes one of the two turns by drawing a safe (non-EK) card.
+    const safe: Card = { id: 'safe-top', type: CardType.Skip };
+    state = { ...state, drawPile: [safe, ...state.drawPile] };
+    state = apply(state, { type: 'draw', playerId: p1 });
+    expect(current(state).id).toBe(p1); // still p1's turn
+    expect(state.turnsRemaining).toBe(1); // one turn left, still attacked
+
+    // p1 now attacks -> next player should owe 1 (remaining) + 2 = 3.
+    inj = withCardInHand(state, p1, CardType.Attack);
+    state = inj.state;
+    state = apply(state, { type: 'play', playerId: p1, cardIds: [inj.cardId] });
+    state = apply(state, { type: 'resolve_pending' });
+    expect(current(state).id).not.toBe(p1);
+    expect(state.turnsRemaining).toBe(3);
+  });
+
+  it('a non-attacked Attack always passes exactly 2 (not 3)', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const inj = withCardInHand(state, me, CardType.Attack);
+    state = inj.state;
+    state = apply(state, { type: 'play', playerId: me, cardIds: [inj.cardId] });
+    state = apply(state, { type: 'resolve_pending' });
+    expect(state.turnsRemaining).toBe(2);
+  });
+
+  it('the actor cannot Nope their own action while it is set to resolve', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const skip = withCardInHand(state, me, CardType.Skip);
+    state = skip.state;
+    const myNope = withCardInHand(state, me, CardType.Nope);
+    state = myNope.state;
+    state = apply(state, { type: 'play', playerId: me, cardIds: [skip.cardId] });
+    const r = applyAction(state, { type: 'nope', playerId: me, cardId: myNope.cardId });
+    expect(r.ok).toBe(false);
+  });
+
+  it('a combo containing an Exploding Kitten is rejected', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const ek: Card = { id: 'combo-ek', type: CardType.ExplodingKitten };
+    const cat = withCardInHand(state, me, CardType.Tacocat);
+    state = cat.state;
+    state = { ...state, players: state.players.map((p) => (p.id === me ? { ...p, hand: [...p.hand, ek] } : p)) };
+    const r = applyAction(state, { type: 'play', playerId: me, cardIds: [cat.cardId, 'combo-ek'], combo: 'pair' });
+    expect(r.ok).toBe(false);
+  });
+
+  it('a triple that names a card the target lacks emits no "stole" event', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const target = state.players.find((p) => p.id !== me)!.id;
+    // Ensure the target does NOT hold a Shuffle.
+    state = {
+      ...state,
+      players: state.players.map((p) =>
+        p.id === target ? { ...p, hand: p.hand.filter((c) => c.type !== CardType.Shuffle) } : p,
+      ),
+    };
+    const c1 = withCardInHand(state, me, CardType.BeardCat);
+    state = c1.state;
+    const c2 = withCardInHand(state, me, CardType.BeardCat);
+    state = c2.state;
+    const c3 = withCardInHand(state, me, CardType.BeardCat);
+    state = c3.state;
+    state = apply(state, {
+      type: 'play',
+      playerId: me,
+      cardIds: [c1.cardId, c2.cardId, c3.cardId],
+      combo: 'triple',
+      target,
+      namedCard: CardType.Shuffle,
+    });
+    const r = applyAction(state, { type: 'resolve_pending' });
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.events.some((e) => e.type === 'stole')).toBe(false);
+  });
+
+  it('a server-provided rng seed makes Shuffle order independent of version', () => {
+    let state = started(4, 42);
+    const me = current(state).id;
+    const inj = withCardInHand(state, me, CardType.Shuffle);
+    state = inj.state;
+    const afterPlay = apply(state, { type: 'play', playerId: me, cardIds: [inj.cardId] });
+    const a = applyAction(afterPlay, { type: 'resolve_pending' }, { rngSeed: 111 });
+    const b = applyAction(afterPlay, { type: 'resolve_pending' }, { rngSeed: 222 });
+    expect(a.ok && b.ok).toBe(true);
+    if (a.ok && b.ok) {
+      // Different seeds -> (almost certainly) different orders; same seed -> same order.
+      const c = applyAction(afterPlay, { type: 'resolve_pending' }, { rngSeed: 111 });
+      expect(c.ok).toBe(true);
+      if (c.ok) expect(a.state.drawPile.map((x) => x.id)).toEqual(c.state.drawPile.map((x) => x.id));
+      expect(a.state.drawPile.map((x) => x.id)).not.toEqual(b.state.drawPile.map((x) => x.id));
+    }
+  });
+});
+
 describe('win condition', () => {
   it('declares the last surviving player the winner', () => {
     let state = started(2);

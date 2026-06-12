@@ -98,4 +98,10 @@ export const RULES = {
   attackTurns: 2,
   /** Milliseconds the Nope window stays open (reset on each Nope). */
   nopeWindowMs: 4000,
+  /** Hard ceiling on a single Nope window no matter how many Nopes stack. */
+  maxNopeWindowMs: 20000,
+  /** Milliseconds before an unanswered forced choice (Favor/Defuse) auto-resolves. */
+  awaitingTimeoutMs: 30000,
+  /** Milliseconds a disconnected current player's turn is auto-advanced after. */
+  turnTimeoutMs: 45000,
 } as const;

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Card, ClientGameView, ClientMessage, GameEvent, ServerMessage } from '@ek/shared';
 import { roomSocketUrl } from '../lib/api.js';
+import { getRoomToken, setRoomToken } from '../lib/identity.js';
 
 export interface GameEventEnvelope {
   /** Monotonic local id so consumers can react to each batch once. */
@@ -29,20 +30,26 @@ export function useGameSocket(code: string, pid: string, name: string): UseGameS
   const wsRef = useRef<WebSocket | null>(null);
   const eventSeq = useRef(0);
   const reconnectRef = useRef<ReturnType<typeof setTimeout>>();
+  const errorTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const closedByUs = useRef(false);
 
   const connect = useCallback(() => {
-    const ws = new WebSocket(roomSocketUrl(code, pid, name));
+    const ws = new WebSocket(roomSocketUrl(code, pid, name, getRoomToken(code)));
     wsRef.current = ws;
 
-    ws.onopen = () => setConnected(true);
+    ws.onopen = () => {
+      // Only the active socket should flip connected / schedule reconnects.
+      if (wsRef.current === ws) setConnected(true);
+    };
     ws.onclose = () => {
+      if (wsRef.current !== ws) return; // a newer socket superseded this one
       setConnected(false);
       if (!closedByUs.current) {
         reconnectRef.current = setTimeout(connect, 1000);
       }
     };
     ws.onmessage = (ev) => {
+      if (wsRef.current !== ws) return;
       let msg: ServerMessage;
       try {
         msg = JSON.parse(ev.data as string) as ServerMessage;
@@ -62,9 +69,12 @@ export function useGameSocket(code: string, pid: string, name: string): UseGameS
           break;
         case 'error':
           setError(msg.message);
-          setTimeout(() => setError(null), 3000);
+          clearTimeout(errorTimerRef.current);
+          errorTimerRef.current = setTimeout(() => setError(null), 3000);
           break;
         case 'joined':
+          // Persist the per-seat token so reconnects authenticate to this seat.
+          setRoomToken(code, msg.token);
           break;
       }
     };
@@ -76,6 +86,7 @@ export function useGameSocket(code: string, pid: string, name: string): UseGameS
     return () => {
       closedByUs.current = true;
       clearTimeout(reconnectRef.current);
+      clearTimeout(errorTimerRef.current);
       wsRef.current?.close();
     };
   }, [connect]);

@@ -41,15 +41,24 @@ function describe(view: ClientGameView, e: GameEvent): string | null {
   }
 }
 
+interface LogLine {
+  id: number;
+  text: string;
+}
+
 export function EventLog({ view, lastEvents }: { view: ClientGameView; lastEvents: GameEventEnvelope | null }) {
-  const [lines, setLines] = useState<string[]>([]);
+  const [lines, setLines] = useState<LogLine[]>([]);
   const seen = useRef(0);
+  const nextId = useRef(0);
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!lastEvents || lastEvents.id === seen.current) return;
     seen.current = lastEvents.id;
-    const newLines = lastEvents.events.map((e) => describe(view, e)).filter((x): x is string => !!x);
+    const newLines = lastEvents.events
+      .map((e) => describe(view, e))
+      .filter((x): x is string => !!x)
+      .map((text) => ({ id: nextId.current++, text }));
     if (newLines.length) setLines((prev) => [...prev, ...newLines].slice(-50));
   }, [lastEvents, view]);
 
@@ -60,8 +69,8 @@ export function EventLog({ view, lastEvents }: { view: ClientGameView; lastEvent
   return (
     <div className="log" ref={ref}>
       {lines.length === 0 && <p>Game log…</p>}
-      {lines.map((l, i) => (
-        <p key={i}>{l}</p>
+      {lines.map((l) => (
+        <p key={l.id}>{l.text}</p>
       ))}
     </div>
   );

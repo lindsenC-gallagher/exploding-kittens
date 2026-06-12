@@ -13,8 +13,9 @@ export async function createRoom(): Promise<string> {
 }
 
 /** Build the WebSocket URL for a room. Uses the API base if set, else same-origin. */
-export function roomSocketUrl(code: string, pid: string, name: string): string {
+export function roomSocketUrl(code: string, pid: string, name: string, token: string): string {
   const params = new URLSearchParams({ pid, name });
+  if (token) params.set('token', token);
   let host = location.host;
   let secure = location.protocol === 'https:';
   if (API_BASE) {

@@ -60,6 +60,12 @@ export interface GameState {
   currentPlayerIndex: number;
   /** Turns the current player must still take (>=1 while playing). */
   turnsRemaining: number;
+  /**
+   * Whether the current player's outstanding turns were granted by an Attack
+   * (as opposed to their single normal turn). Lets Attack stack correctly:
+   * a fresh player passes 2; an attacked player passes their remaining + 2.
+   */
+  attacked: boolean;
   /** Draw pile, index 0 = top of the deck (next to be drawn). */
   drawPile: Card[];
   discardPile: Card[];

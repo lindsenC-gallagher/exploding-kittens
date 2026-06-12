@@ -6,7 +6,7 @@ import {
   NOPEABLE_ACTIONS,
   type Card,
 } from './cards.js';
-import { createRng, shuffle, type Rng } from './rng.js';
+import { createRng, shuffle } from './rng.js';
 import type {
   ApplyResult,
   ComboKind,
@@ -50,6 +50,7 @@ export function createLobby(hostId: string): GameState {
     players: [],
     currentPlayerIndex: 0,
     turnsRemaining: 1,
+    attacked: false,
     drawPile: [],
     discardPile: [],
     version: 0,
@@ -116,6 +117,7 @@ export function startGame(state: GameState, seed: number): ApplyResult {
       discardPile: [],
       currentPlayerIndex: 0,
       turnsRemaining: 1,
+      attacked: false,
       version: state.version + 1,
     },
     events: [
@@ -173,6 +175,7 @@ function endTurn(state: GameState, events: GameEvent[]): void {
   const nextIdx = nextAliveIndex(state, state.currentPlayerIndex);
   state.currentPlayerIndex = nextIdx;
   state.turnsRemaining = 1;
+  state.attacked = false;
   events.push({ type: 'turn_changed', playerId: state.players[nextIdx].id, turnsRemaining: 1 });
 }
 
@@ -194,7 +197,11 @@ function checkGameOver(state: GameState, events: GameEvent[]): void {
  * Pure: never mutates the input state. Returns ok:false with an error for
  * illegal moves (state unchanged).
  */
-export function applyAction(prev: GameState, action: GameAction): ApplyResult {
+export function applyAction(
+  prev: GameState,
+  action: GameAction,
+  opts?: { rngSeed?: number },
+): ApplyResult {
   if (prev.phase !== 'playing') return { ok: false, error: 'Game is not in progress' };
 
   // Deep-ish clone (cards are immutable value objects, so shallow-copy arrays).
@@ -208,7 +215,7 @@ export function applyAction(prev: GameState, action: GameAction): ApplyResult {
   };
   const events: GameEvent[] = [];
 
-  const result = route(state, action, events);
+  const result = route(state, action, events, opts?.rngSeed);
   if (result) return result; // error path
 
   checkGameOver(state, events);
@@ -216,14 +223,19 @@ export function applyAction(prev: GameState, action: GameAction): ApplyResult {
   return { ok: true, state, events };
 }
 
-function route(state: GameState, action: GameAction, events: GameEvent[]): ApplyResult | null {
+function route(
+  state: GameState,
+  action: GameAction,
+  events: GameEvent[],
+  rngSeed?: number,
+): ApplyResult | null {
   switch (action.type) {
     case 'play':
       return handlePlay(state, action, events);
     case 'nope':
       return handleNope(state, action, events);
     case 'resolve_pending':
-      return resolvePending(state, events);
+      return resolvePending(state, events, rngSeed);
     case 'draw':
       return handleDraw(state, action, events);
     case 'defuse':
@@ -313,6 +325,11 @@ function classifyCombo(
   const types = cards.map((c) => c.type);
   const unique = new Set(types);
 
+  // An Exploding Kitten can never be part of a combo (you'd be eliminated holding one).
+  if (types.includes(CardType.ExplodingKitten)) {
+    return { ok: false, error: 'Exploding Kittens cannot be played in a combo' };
+  }
+
   if (cards.length === 2 && unique.size === 1) return { ok: true, combo: 'pair' };
   if (cards.length === 3 && unique.size === 1) return { ok: true, combo: 'triple' };
   if (cards.length === 5 && unique.size === 5) return { ok: true, combo: 'five_different' };
@@ -330,6 +347,12 @@ function handleNope(
   events: GameEvent[],
 ): ApplyResult | null {
   if (!state.pending) return { ok: false, error: 'Nothing to Nope' };
+  // The actor may not Nope their own action while it's currently set to resolve
+  // (even Nope count). They MAY play a Nope as a "Yup" to counter an opponent's
+  // Nope (odd count), which re-enables their action.
+  if (state.pending.by === action.playerId && state.pending.nopes % 2 === 0) {
+    return { ok: false, error: 'You cannot Nope your own action' };
+  }
   const player = state.players.find((p) => p.id === action.playerId);
   if (!player || !player.alive) return { ok: false, error: 'Not an active player' };
   const card = player.hand.find((c) => c.id === action.cardId);
@@ -343,7 +366,11 @@ function handleNope(
 }
 
 /** Resolve the pending action once the Nope window closes. */
-function resolvePending(state: GameState, events: GameEvent[]): ApplyResult | null {
+function resolvePending(
+  state: GameState,
+  events: GameEvent[],
+  rngSeed?: number,
+): ApplyResult | null {
   const pending = state.pending;
   if (!pending) return { ok: false, error: 'Nothing pending' };
   state.pending = undefined;
@@ -352,7 +379,7 @@ function resolvePending(state: GameState, events: GameEvent[]): ApplyResult | nu
   events.push({ type: 'action_resolved', kind: pending.kind, cancelled });
   if (cancelled) return null; // Noped: discard already happened, no effect.
 
-  applyEffect(state, pending, events);
+  applyEffect(state, pending, events, rngSeed);
   return null;
 }
 
@@ -360,18 +387,23 @@ function applyEffect(
   state: GameState,
   pending: NonNullable<GameState['pending']>,
   events: GameEvent[],
+  rngSeed?: number,
 ): void {
   const actor = state.players.find((p) => p.id === pending.by);
   if (!actor) return;
 
   switch (pending.kind) {
     case CardType.Attack: {
-      // End all of the current player's turns; next player takes the stack + 2.
-      const carried = state.turnsRemaining > 1 ? state.turnsRemaining : 0;
+      // End all of the current player's turns. A fresh (non-attacked) player
+      // passes exactly 2; a player already serving attack-turns passes their
+      // remaining turns + 2 (official stacking, e.g. owed 2 -> next owes 4,
+      // owed 1 after taking one -> next owes 3).
+      const carried = state.attacked ? state.turnsRemaining : 0;
       const nextTurns = carried + RULES.attackTurns;
       const nextIdx = nextAliveIndex(state, state.currentPlayerIndex);
       state.currentPlayerIndex = nextIdx;
       state.turnsRemaining = nextTurns;
+      state.attacked = true;
       events.push({ type: 'turn_changed', playerId: state.players[nextIdx].id, turnsRemaining: nextTurns });
       break;
     }
@@ -381,10 +413,10 @@ function applyEffect(
       break;
     }
     case CardType.Shuffle: {
-      // Deterministic-by-server shuffle: caller injects randomness via reorder.
-      // Here we rotate using a cheap derangement seeded by version for purity;
-      // the server replaces drawPile order through a dedicated path if desired.
-      state.drawPile = shuffleByVersion(state.drawPile, state.version);
+      // Use server-injected entropy when available so the new order is genuinely
+      // unpredictable; fall back to a version-seeded shuffle for deterministic tests.
+      const seed = rngSeed ?? (state.version + 1) * 2654435761;
+      state.drawPile = shuffle(state.drawPile, createRng(seed));
       events.push({ type: 'shuffled' });
       break;
     }
@@ -396,9 +428,11 @@ function applyEffect(
     case CardType.Favor: {
       const target = state.players.find((p) => p.id === pending.target);
       if (target && target.alive) {
+        // Event convention: `from` = the player who must give a card (the target),
+        // `to` = the requester (the actor who played Favor). Consistent in both branches.
         if (target.hand.length === 0) {
           // Nothing to give; favor fizzles.
-          events.push({ type: 'favor_requested', from: actor.id, to: target.id });
+          events.push({ type: 'favor_requested', from: target.id, to: actor.id });
         } else {
           state.awaiting = { type: 'favor_give', playerId: target.id, toPlayerId: actor.id };
           events.push({ type: 'favor_requested', from: target.id, to: actor.id });
@@ -407,7 +441,7 @@ function applyEffect(
       break;
     }
     case 'pair': {
-      stealRandom(state, actor.id, pending.target, 'pair', events);
+      stealRandom(state, actor.id, pending.target, 'pair', events, rngSeed);
       break;
     }
     case 'triple': {
@@ -423,23 +457,18 @@ function applyEffect(
   }
 }
 
-/** Stable shuffle helper for the Shuffle card (server may override deck order). */
-function shuffleByVersion<T>(items: T[], version: number): T[] {
-  const rng: Rng = createRng((version + 1) * 2654435761);
-  return shuffle(items, rng);
-}
-
 function stealRandom(
   state: GameState,
   byId: string,
   targetId: string | undefined,
   via: ComboKind,
   events: GameEvent[],
+  rngSeed?: number,
 ): void {
   const by = state.players.find((p) => p.id === byId);
   const target = state.players.find((p) => p.id === targetId);
   if (!by || !target || !target.alive || target.hand.length === 0) return;
-  const rng = createRng((state.version + 7) * 40503);
+  const rng = createRng(rngSeed ?? (state.version + 7) * 40503);
   const idx = rng.int(target.hand.length);
   const [card] = target.hand.splice(idx, 1);
   by.hand.push(card);
@@ -458,8 +487,8 @@ function stealNamed(
   if (!by || !target || !target.alive || !named) return;
   const idx = target.hand.findIndex((c) => c.type === named);
   if (idx === -1) {
-    // Target doesn't have it — combo whiffs, but is still spent.
-    events.push({ type: 'stole', by: byId, from: target.id, viaCombo: 'triple' });
+    // Target doesn't have the named card — combo is spent but nothing is taken,
+    // and we emit no 'stole' event so the log doesn't falsely claim a steal.
     return;
   }
   const [card] = target.hand.splice(idx, 1);
@@ -527,6 +556,7 @@ function explode(state: GameState, player: PlayerState, ek: Card, events: GameEv
     const nextIdx = nextAliveIndex(state, state.currentPlayerIndex);
     state.currentPlayerIndex = nextIdx;
     state.turnsRemaining = 1;
+    state.attacked = false;
     events.push({ type: 'turn_changed', playerId: state.players[nextIdx].id, turnsRemaining: 1 });
   }
 }

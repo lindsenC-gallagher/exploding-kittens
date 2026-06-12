@@ -65,4 +65,5 @@ export type ServerMessage =
   /** See the Future result, sent only to the viewing player. */
   | { t: 'see_future'; cards: Card[] }
   | { t: 'error'; message: string }
-  | { t: 'joined'; youId: string; roomCode: string };
+  /** Sent once on connect; `token` is the per-seat secret to present on reconnect. */
+  | { t: 'joined'; youId: string; roomCode: string; token: string };

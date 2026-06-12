@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CardType, type CardType as CT } from '@ek/shared';
+import { CardType, type CardType as CT, type ClientMessage } from '@ek/shared';
 import type { UseGameSocket } from '../hooks/useGameSocket.js';
 import { Card } from './Card.js';
 import { Opponents } from './Opponents.js';
@@ -57,7 +57,8 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
     return null;
   }, [selectedCards]);
 
-  // Transient animation triggers from the event stream.
+  // Transient animation triggers from the event stream (does NOT touch selection,
+  // so an unrelated opponent event can't wipe a combo you're assembling).
   useEffect(() => {
     if (!lastEvents || lastEvents.id === seenEvents.current) return;
     seenEvents.current = lastEvents.id;
@@ -69,22 +70,30 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
       setShowBoom(true);
       setTimeout(() => setShowBoom(false), 1300);
     }
-    // Selection may have been consumed by a play.
-    setSelected([]);
-    setFlow(null);
   }, [lastEvents]);
 
-  // Nope window countdown.
+  // Clear any in-progress selection/flow whenever you can no longer act
+  // (turn passed, a prompt opened, or a Nope window started).
   useEffect(() => {
-    if (!view!.nope) {
+    if (!canAct) {
+      setSelected([]);
+      setFlow(null);
+    }
+  }, [canAct]);
+
+  // Nope window countdown. Keyed on the deadline (a primitive) so it only
+  // resets when the deadline actually changes.
+  const nopeDeadline = view?.nope?.deadline ?? null;
+  useEffect(() => {
+    if (!nopeDeadline) {
       setNopeLeft(0);
       return;
     }
-    const tick = () => setNopeLeft(Math.max(0, view!.nope!.deadline - Date.now()));
+    const tick = () => setNopeLeft(Math.max(0, nopeDeadline - Date.now()));
     tick();
     const h = setInterval(tick, 100);
     return () => clearInterval(h);
-  }, [view!.nope]);
+  }, [nopeDeadline]);
 
   if (!view || !me) return null;
 
@@ -93,12 +102,21 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]));
   }
 
+  // Send a play and immediately clear local selection/flow (optimistic). We do
+  // NOT wait for an incoming event to clear, so unrelated broadcasts can't wipe
+  // an in-progress selection.
+  function doPlay(msg: ClientMessage) {
+    send(msg);
+    setSelected([]);
+    setFlow(null);
+  }
+
   function play() {
     if (!playMode) return;
     if (playMode === 'single') {
       const t = selectedCards[0].type;
       if (t === CardType.Favor) return setFlow({ step: 'target', mode: 'favor' });
-      send({ t: 'play', cardIds: selected });
+      doPlay({ t: 'play', cardIds: selected });
       return;
     }
     if (playMode === 'pair') return setFlow({ step: 'target', mode: 'pair' });
@@ -110,11 +128,9 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
     const f = flow;
     if (!f || f.step !== 'target') return;
     if (f.mode === 'favor') {
-      send({ t: 'play', cardIds: selected, target });
-      setFlow(null);
+      doPlay({ t: 'play', cardIds: selected, target });
     } else if (f.mode === 'pair') {
-      send({ t: 'play', cardIds: selected, combo: 'pair', target });
-      setFlow(null);
+      doPlay({ t: 'play', cardIds: selected, combo: 'pair', target });
     } else {
       setFlow({ step: 'name', target });
     }
@@ -124,6 +140,12 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
   const defuseCardId = hand.find((c) => c.type === CardType.Defuse)?.id;
   const favorPrompt = view.prompt?.type === 'favor_give' ? view.prompt : null;
   const playLabel = describePlay(playMode, selectedCards.length);
+  // You may Nope unless it's your own action that's currently set to resolve.
+  // (You can still "Yup" — play a Nope when the count is odd — to counter a Nope.)
+  const canNope =
+    !!view.nope &&
+    !!nopeCardId &&
+    (view.nope.by !== view.youId || view.nope.nopes % 2 === 1);
 
   return (
     <div className="table">
@@ -143,6 +165,11 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
       <div className="stack">
         <div className="toolbar">
           {playMode && canAct && <button onClick={play}>▶ Play {playLabel}</button>}
+          {canAct && selected.length > 0 && !playMode && (
+            <span className="badge" style={{ alignSelf: 'center' }}>
+              Pick 1 action card, a matching pair/triple, or 5 different cards
+            </span>
+          )}
           {selected.length > 0 && (
             <button className="ghost" onClick={() => setSelected([])}>
               Clear
@@ -180,7 +207,7 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
 
       {/* Floating Nope button during a Nope window. */}
       <AnimatePresence>
-        {view.nope && nopeCardId && (
+        {canNope && (
           <motion.div
             initial={{ scale: 0, y: 40 }}
             animate={{ scale: 1, y: 0 }}
@@ -223,20 +250,18 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
       )}
       {flow?.step === 'name' && (
         <NamedCardPicker
-          onPick={(type) => {
-            send({ t: 'play', cardIds: selected, combo: 'triple', target: flow.target, namedCard: type });
-            setFlow(null);
-          }}
+          onPick={(type) =>
+            doPlay({ t: 'play', cardIds: selected, combo: 'triple', target: flow.target, namedCard: type })
+          }
           onCancel={() => setFlow(null)}
         />
       )}
       {flow?.step === 'discard' && (
         <DiscardPicker
           discardPile={view.discardPile}
-          onPick={(cardId) => {
-            send({ t: 'play', cardIds: selected, combo: 'five_different', discardCardId: cardId });
-            setFlow(null);
-          }}
+          onPick={(cardId) =>
+            doPlay({ t: 'play', cardIds: selected, combo: 'five_different', discardCardId: cardId })
+          }
           onCancel={() => setFlow(null)}
         />
       )}

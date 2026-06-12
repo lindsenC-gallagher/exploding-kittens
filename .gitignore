@@ -9,3 +9,5 @@ playwright-report/
 .dryrun/
 .DS_Store
 coverage/
+*.tsbuildinfo
+apps/worker/worker-configuration.d.ts
