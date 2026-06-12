@@ -1,0 +1,56 @@
+name: Production E2E
+
+# Runs the Playwright multi-player e2e suite against the LIVE production URL after
+# a deploy. Deploys are done by Cloudflare's native Git integration (Workers
+# Builds); when that deployment is marked successful on GitHub it emits a
+# `deployment_status` event, which triggers this workflow. Also runnable manually.
+#
+# If your Cloudflare integration does not create GitHub deployments (so the
+# deployment_status trigger never fires), switch the trigger to:
+#   on: { push: { branches: [main] }, workflow_dispatch: {} }
+# The health-wait step below already tolerates the deploy still being in flight.
+
+on:
+  deployment_status:
+  workflow_dispatch:
+    inputs:
+      base_url:
+        description: 'Base URL to test against'
+        default: 'https://exploding-kittens.lindsen-cruz.workers.dev'
+
+# Only run for successful deployments (or a manual dispatch).
+jobs:
+  e2e:
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.deployment_status.state == 'success' }}
+    runs-on: ubuntu-latest
+    env:
+      E2E_BASE_URL: ${{ github.event.inputs.base_url || github.event.deployment_status.environment_url || 'https://exploding-kittens.lindsen-cruz.workers.dev' }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Wait for production to be healthy
+        run: |
+          echo "Waiting for $E2E_BASE_URL/api/health ..."
+          for i in $(seq 1 30); do
+            if curl -fsS "$E2E_BASE_URL/api/health" >/dev/null; then
+              echo "Healthy."; exit 0
+            fi
+            sleep 5
+          done
+          echo "Production did not become healthy in time"; exit 1
+      - name: Run e2e against production
+        run: pnpm exec playwright test
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-playwright-report
+          path: playwright-report/
+          retention-days: 7
