@@ -1,0 +1,25 @@
+{
+  "name": "exploding-kittens",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Faithful online-multiplayer Exploding Kittens clone (Cloudflare stack)",
+  "scripts": {
+    "dev": "concurrently -n web,worker -c blue,magenta \"pnpm --filter @ek/web dev\" \"pnpm --filter @ek/worker dev\"",
+    "build": "pnpm --filter @ek/shared build && pnpm --filter @ek/web build",
+    "typecheck": "pnpm -r typecheck",
+    "test": "pnpm --filter @ek/shared test",
+    "test:e2e": "playwright test",
+    "lint": "eslint .",
+    "format": "prettier --write ."
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.49.1",
+    "@typescript-eslint/eslint-plugin": "^8.18.2",
+    "@typescript-eslint/parser": "^8.18.2",
+    "concurrently": "^9.1.0",
+    "eslint": "^8.57.1",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2"
+  },
+  "packageManager": "pnpm@9.15.0"
+}
