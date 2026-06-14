@@ -1,16 +1,24 @@
-name: CI
+name: CI & Deploy
 
-# Continuous integration only: lint-level typecheck + unit tests on every push/PR.
+# CI on every push/PR, plus a production deploy to Cloudflare on pushes to main.
 #
-# Production deploys are handled by Cloudflare's native Git integration
-# (Workers Builds), not from here — so there are no Cloudflare secrets in GitHub
-# and no risk of double-deploying. Configure it once in the Cloudflare dashboard
-# (Workers & Pages > the "exploding-kittens" Worker > Settings > Builds > Connect repo):
-#   - Build command:  pnpm install && pnpm --filter @ek/shared build && pnpm --filter @ek/web build
-#   - Deploy command: npx wrangler deploy
-#   - Root directory: apps/worker   (where wrangler.toml lives)
-# The single Worker serves the React app (static assets) + /api + the GameRoom
-# Durable Object, so one deploy ships everything.
+#   test    -> lint-level typecheck + unit tests (runs for every push/PR/dispatch)
+#   deploy  -> build the app and `wrangler deploy` the single Worker (main only)
+#   e2e     -> Playwright multi-player suite against the freshly deployed prod URL
+#
+# The Worker serves the React app (static assets) + /api + the GameRoom Durable
+# Object, so one `wrangler deploy` ships everything.
+#
+# DEPLOY IS DONE FROM HERE — not from Cloudflare's native Git integration.
+# Disconnect "Workers Builds" in the Cloudflare dashboard (Workers & Pages > the
+# "exploding-kittens" Worker > Settings > Builds) so you don't deploy twice per push.
+#
+# Required GitHub repo secrets (Settings > Secrets and variables > Actions):
+#   CLOUDFLARE_API_TOKEN   - a token with the "Edit Cloudflare Workers" template
+#                            (Account: Workers Scripts: Edit; the deploy also needs
+#                            Workers KV/DO + Account Settings: Read as that template grants).
+#   CLOUDFLARE_ACCOUNT_ID  - your Cloudflare account id.
+# wrangler reads both from the environment automatically.
 
 on:
   push:
@@ -18,8 +26,8 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Least privilege: this workflow only reads the repo (no secrets, no deploys).
-# Pull-request runs (incl. forks) therefore get a read-only token.
+# Least privilege: only the repo contents are read; deploy auth is via the
+# Cloudflare API token secret, not the GitHub token.
 permissions:
   contents: read
 
@@ -38,3 +46,61 @@ jobs:
         run: pnpm --filter @ek/shared test
       - name: Typecheck
         run: pnpm -r typecheck
+
+  deploy:
+    needs: test
+    # Only deploy from main (push) or a manual run — never from pull requests.
+    if: ${{ (github.event_name == 'push' && github.ref == 'refs/heads/main') || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Build app (shared + web)
+        # Produces apps/web/dist, which wrangler.toml serves as static assets.
+        run: pnpm build
+      - name: Deploy Worker to Cloudflare
+        working-directory: apps/worker
+        run: pnpm exec wrangler deploy
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  e2e:
+    needs: deploy
+    runs-on: ubuntu-latest
+    env:
+      E2E_BASE_URL: https://exploding-kittens.lindsen-cruz.workers.dev
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Install Playwright browser
+        run: pnpm exec playwright install --with-deps chromium
+      - name: Wait for production to be healthy
+        run: |
+          echo "Waiting for $E2E_BASE_URL/api/health ..."
+          for i in $(seq 1 30); do
+            if curl -fsS "$E2E_BASE_URL/api/health" >/dev/null; then
+              echo "Healthy."; exit 0
+            fi
+            sleep 5
+          done
+          echo "Production did not become healthy in time"; exit 1
+      - name: Run e2e against production
+        run: pnpm exec playwright test
+      - name: Upload report on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: production-playwright-report
+          path: playwright-report/
+          retention-days: 7
