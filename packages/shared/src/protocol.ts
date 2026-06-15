@@ -1,5 +1,5 @@
 import type { Card, CardType } from './cards.js';
-import type { ComboKind, GameEvent, GamePhase } from './state.js';
+import type { ComboKind, GameEvent, GameOptions, GamePhase } from './state.js';
 
 /**
  * Wire protocol between the React client and the GameRoom Durable Object.
@@ -11,6 +11,8 @@ import type { ComboKind, GameEvent, GamePhase } from './state.js';
 export type ClientMessage =
   | { t: 'join'; name: string }
   | { t: 'set_ready'; ready: boolean }
+  /** Host-only, lobby-only: toggle one or more house rules. */
+  | { t: 'set_options'; options: Partial<GameOptions> }
   | { t: 'start_game' }
   | { t: 'play'; cardIds: string[]; combo?: ComboKind; target?: string; namedCard?: CardType; discardCardId?: string }
   | { t: 'nope'; cardId: string }
@@ -42,6 +44,8 @@ export interface ClientGameView {
   roomCode: string;
   youId: string;
   hostId: string;
+  /** Active house rules (set by the host in the lobby). */
+  options: GameOptions;
   players: PublicPlayer[];
   /** Your own hand (full detail). Empty until the game starts. */
   yourHand: Card[];

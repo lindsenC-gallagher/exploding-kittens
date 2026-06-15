@@ -112,3 +112,7 @@ Base deck (56 cards): 4 Exploding Kitten, 6 Defuse, 5 Nope, 4 Attack, 4 Skip, 4 
 chain, Favor, See the Future (private), Shuffle, Defuse reinsertion, and all three
 combos (pair = steal random, triple = name & take, five different = take from discard).
 Last kitty standing wins.
+
+**House rules.** In the lobby the host can toggle individual combos on/off (pair,
+three-of-a-kind, and the five-different "5-card rule"); the setting syncs to every
+player and the engine rejects a disabled combo. All default to on (the faithful base game).

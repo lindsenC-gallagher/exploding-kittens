@@ -1,5 +1,5 @@
 import { RULES } from './cards.js';
-import type { GameEvent, GameState } from './state.js';
+import { DEFAULT_OPTIONS, type GameEvent, type GameState } from './state.js';
 import type { ClientGameView, PublicPlayer } from './protocol.js';
 
 /**
@@ -45,6 +45,7 @@ export function projectView(
     roomCode,
     youId: recipientId,
     hostId: state.hostId,
+    options: state.options ?? DEFAULT_OPTIONS,
     players,
     yourHand: me ? me.hand : [],
     currentPlayerId: current ? current.id : null,
@@ -76,6 +77,11 @@ export function projectView(
 export function redactEventForRecipient(event: GameEvent, recipientId: string): GameEvent {
   if (event.type === 'stole' && event.card && recipientId !== event.by && recipientId !== event.from) {
     return { type: 'stole', by: event.by, from: event.from, viaCombo: event.viaCombo };
+  }
+  // A drawn card's identity is private to the drawer; everyone else just learns
+  // that *a* card was drawn (and sees a face-down card fly to the drawer).
+  if (event.type === 'card_drawn' && event.card && recipientId !== event.by) {
+    return { type: 'card_drawn', by: event.by };
   }
   return event;
 }

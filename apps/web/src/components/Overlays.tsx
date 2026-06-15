@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CARD_NAMES, type Card as CardModel, type ClientGameView, type ComboKind } from '@ek/shared';
 import { Card, CardBack } from './Card.js';
@@ -112,25 +113,42 @@ export interface PlayedBannerData {
   byName: string;
   cards: CardModel[];
   combo?: ComboKind;
+  /**
+   * Where to pin the banner relative to the player who played. `x`/`y` are the
+   * viewport-anchor point (centre-x of the player, and the edge of their box);
+   * `placement` says whether the banner sits below the anchor (arrow points up
+   * at a top-of-table opponent) or above it (arrow points down at your hand).
+   * Null falls back to the old centred-near-top position.
+   */
+  pos?: { x: number; y: number; placement: 'above' | 'below' } | null;
 }
 
 /**
- * Big, transient "X played Y" announcement in the centre of the table so it's
- * obvious who played what. Auto-dismissed by the parent after a few seconds.
- * Non-interactive (pointer-events: none) so it never blocks the table beneath.
+ * Big, transient "X played Y" announcement, pinned just under (or above) the
+ * player who played with an arrow pointing at them, so it's obvious who did
+ * what. Auto-dismissed by the parent after a few seconds. Non-interactive
+ * (pointer-events: none) so it never blocks the table beneath.
  */
 export function PlayedBanner({ banner }: { banner: PlayedBannerData | null }) {
+  const pos = banner?.pos ?? null;
+  const style: CSSProperties = pos
+    ? pos.placement === 'below'
+      ? { left: pos.x, top: pos.y + 16, transform: 'translateX(-50%)' }
+      : { left: pos.x, top: pos.y - 16, transform: 'translate(-50%, -100%)' }
+    : { left: '50%', top: '16%', transform: 'translateX(-50%)' };
   return (
     <AnimatePresence>
       {banner && (
         <motion.div
           key={banner.id}
           className="played-banner"
-          initial={{ opacity: 0, scale: 0.7, y: -30 }}
-          animate={{ opacity: 1, scale: 1, y: 0 }}
-          exit={{ opacity: 0, scale: 1.1, y: -20 }}
+          style={style}
+          initial={{ opacity: 0, scale: 0.7 }}
+          animate={{ opacity: 1, scale: 1 }}
+          exit={{ opacity: 0, scale: 1.1 }}
           transition={{ type: 'spring', stiffness: 320, damping: 24 }}
         >
+          {pos && <div className={`played-arrow ${pos.placement === 'below' ? 'up' : 'down'}`} />}
           <div className="played-by">🃏 {banner.byName} played</div>
           <div className="played-cards">
             {banner.cards.map((c, i) => (
@@ -227,6 +245,47 @@ export function FlyingCards({ cards }: { cards: FlyingCard[] }) {
             <CardBack />
           </motion.div>
         ))}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+export interface DrawRevealData {
+  id: number;
+  /** Viewport top-left of the draw pile (the card starts here). */
+  from: { x: number; y: number };
+  /** Viewport top-left of the card's destination slot in your hand. */
+  to: { x: number; y: number };
+  type: CardModel['type'];
+}
+
+/**
+ * The drawer's private "reveal": the card they just drew appears face up over
+ * the draw pile, then glides to the exact slot it lands in within their hand
+ * (the real hand card stays hidden until this finishes). Only the drawing
+ * player ever sees it face up; others see a face-down {@link FlyingCards} card.
+ */
+export function DrawReveal({ reveal }: { reveal: DrawRevealData | null }) {
+  return (
+    <div className="flying-layer">
+      <AnimatePresence>
+        {reveal && (
+          <motion.div
+            key={reveal.id}
+            className="draw-reveal"
+            initial={{ x: reveal.from.x, y: reveal.from.y, scale: 0.7, opacity: 0 }}
+            animate={{
+              x: [reveal.from.x, reveal.from.x, reveal.to.x],
+              y: [reveal.from.y, reveal.from.y, reveal.to.y],
+              scale: [0.7, 1.06, 1],
+              opacity: [0, 1, 1],
+            }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.82, times: [0, 0.34, 1], ease: 'easeInOut' }}
+          >
+            <Card type={reveal.type} />
+          </motion.div>
+        )}
       </AnimatePresence>
     </div>
   );

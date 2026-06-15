@@ -7,12 +7,14 @@ import {
   type Card,
 } from './cards.js';
 import { createRng, shuffle } from './rng.js';
-import type {
-  ApplyResult,
-  ComboKind,
-  GameEvent,
-  GameState,
-  PlayerState,
+import {
+  DEFAULT_OPTIONS,
+  type ApplyResult,
+  type ComboKind,
+  type GameEvent,
+  type GameOptions,
+  type GameState,
+  type PlayerState,
 } from './state.js';
 
 /** Engine-level actions. The server is responsible for authenticating playerId. */
@@ -48,6 +50,7 @@ export function createLobby(hostId: string): GameState {
   return {
     phase: 'lobby',
     hostId,
+    options: { ...DEFAULT_OPTIONS },
     players: [],
     currentPlayerIndex: 0,
     turnsRemaining: 1,
@@ -55,6 +58,25 @@ export function createLobby(hostId: string): GameState {
     drawPile: [],
     discardPile: [],
     version: 0,
+  };
+}
+
+/** Read a state's house rules, defaulting for states persisted before options existed. */
+export function gameOptions(state: GameState): GameOptions {
+  return state.options ?? DEFAULT_OPTIONS;
+}
+
+/**
+ * Apply host-chosen house rules. Only takes effect in the lobby (options are
+ * frozen once the game starts). Unknown keys are ignored by the caller's
+ * validation; here we simply merge the provided booleans over the current set.
+ */
+export function setOptions(state: GameState, partial: Partial<GameOptions>): GameState {
+  if (state.phase !== 'lobby') return state;
+  return {
+    ...state,
+    options: { ...gameOptions(state), ...partial },
+    version: state.version + 1,
   };
 }
 
@@ -306,6 +328,18 @@ function handlePlay(
     if (!comboResult.ok) return { ok: false, error: comboResult.error };
     combo = comboResult.combo;
     kind = comboResult.combo;
+
+    // Honour the host's house rules — a disabled combo cannot be played.
+    const opts = gameOptions(state);
+    if (combo === 'pair' && !opts.allowPairSteal) {
+      return { ok: false, error: 'Pairs are disabled in this game' };
+    }
+    if (combo === 'triple' && !opts.allowTripleDemand) {
+      return { ok: false, error: 'Three-of-a-kind is disabled in this game' };
+    }
+    if (combo === 'five_different' && !opts.allowFiveDifferent) {
+      return { ok: false, error: 'The five-different combo is disabled in this game' };
+    }
   }
 
   // Validate combo targets/params up front.
@@ -585,9 +619,11 @@ function handleDraw(
   if (state.drawPile.length === 0) return { ok: false, error: 'Draw pile is empty' };
 
   const card = state.drawPile.shift()!;
-  events.push({ type: 'card_drawn', by: player.id });
 
   if (card.type === CardType.ExplodingKitten) {
+    // No card on the event: an Exploding Kitten never lands face up in the hand,
+    // and the defuse/explosion flow drives the visuals instead.
+    events.push({ type: 'card_drawn', by: player.id });
     const hasDefuse = player.hand.some((c) => c.type === CardType.Defuse);
     if (hasDefuse) {
       // Hold the kitten off-pile on the awaiting record so it never leaks into
@@ -600,7 +636,9 @@ function handleDraw(
     return null;
   }
 
-  // Normal draw: add to hand and end one turn.
+  // Normal draw: add to hand and end one turn. The drawn card rides on the event
+  // (redacted to everyone but the drawer) so the drawer can reveal it face up.
+  events.push({ type: 'card_drawn', by: player.id, card });
   player.hand.push(card);
   endTurn(state, events);
   return null;

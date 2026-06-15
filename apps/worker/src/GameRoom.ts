@@ -7,6 +7,7 @@ import {
   projectView,
   redactEventForRecipient,
   reorderHand,
+  setOptions,
   startGame,
   RULES,
   CardType,
@@ -226,6 +227,15 @@ export class GameRoom {
           await this.persist();
           this.broadcastViews();
         }
+        return;
+      }
+
+      case 'set_options': {
+        // House rules are the host's call and only adjustable before kick-off.
+        if (pid !== this.game.hostId || this.game.phase !== 'lobby') return;
+        this.game = setOptions(this.game, msg.options);
+        await this.persist();
+        this.broadcastViews();
         return;
       }
 

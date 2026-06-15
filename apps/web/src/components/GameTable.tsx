@@ -7,6 +7,7 @@ import { Opponents } from './Opponents.js';
 import { Piles } from './Piles.js';
 import { EventLog } from './EventLog.js';
 import {
+  DrawReveal,
   ExplosionFlash,
   FlyingCards,
   NopeStamp,
@@ -14,6 +15,7 @@ import {
   SeeFutureModal,
   StolenToast,
   WinScreen,
+  type DrawRevealData,
   type FlyingCard,
   type PlayedBannerData,
   type StolenToastData,
@@ -98,9 +100,14 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
   const [playedBanner, setPlayedBanner] = useState<PlayedBannerData | null>(null);
   const [stolenToast, setStolenToast] = useState<StolenToastData | null>(null);
   const [flyingCards, setFlyingCards] = useState<FlyingCard[]>([]);
+  // The drawer's private face-up reveal, plus the id of the hand card it lands
+  // on (kept hidden until the reveal completes so the card doesn't "flash" in).
+  const [drawReveal, setDrawReveal] = useState<DrawRevealData | null>(null);
+  const [drawingCardId, setDrawingCardId] = useState<string | null>(null);
   const overlaySeq = useRef(0);
   const bannerTimer = useRef<ReturnType<typeof setTimeout>>();
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
+  const drawTimer = useRef<ReturnType<typeof setTimeout>>();
 
   const nameOf = (id: string) => view!.players.find((p) => p.id === id)?.name ?? 'Someone';
 
@@ -112,6 +119,17 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
     if (typeof document === 'undefined') return null;
     return document.getElementById(id)?.getBoundingClientRect() ?? null;
   }
+  // Pin the "played" banner to the player who acted: an opponent up top gets the
+  // banner below their box (arrow up); your own hand at the bottom gets it above
+  // (arrow down). x is clamped so a banner near an edge stays on screen.
+  function bannerPosFor(pid: string): PlayedBannerData['pos'] {
+    const rect = anchorRect(playerAnchorId(pid));
+    if (!rect) return null;
+    const vw = typeof window !== 'undefined' ? window.innerWidth : 1024;
+    const x = Math.max(150, Math.min(rect.left + rect.width / 2, vw - 150));
+    const below = rect.top < (typeof window !== 'undefined' ? window.innerHeight : 768) / 2;
+    return { x, y: below ? rect.bottom : rect.top, placement: below ? 'below' : 'above' };
+  }
   // Fly a face-down card between two anchors. Used for draws (pile -> drawer) and
   // Favors (giver -> receiver, which everyone sees, face down).
   function flyCard(src: DOMRect | null, dest: DOMRect | null) {
@@ -121,6 +139,40 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
     const id = overlaySeq.current++;
     setFlyingCards((cs) => [...cs, { id, from, to }]);
     setTimeout(() => setFlyingCards((cs) => cs.filter((c) => c.id !== id)), 750);
+  }
+
+  // The drawer's POV: reveal the drawn card face up over the pile, then fly it to
+  // the exact slot where it lands in the hand. We hide the real hand card until
+  // the reveal finishes, so it doesn't pop in mid-flight. The destination is
+  // measured from the live DOM (the card is the same size as the pile), so it
+  // lands precisely; we poll a few frames in case the hand hasn't rendered yet.
+  function revealDraw(card: { id: string; type: CardType }) {
+    const src = anchorRect('draw-anchor');
+    if (!src) return;
+    setDrawingCardId(card.id);
+    clearTimeout(drawTimer.current);
+    let tries = 0;
+    const place = () => {
+      const el = document.querySelector<HTMLElement>(`[data-card-id="${card.id}"]`);
+      if (el) {
+        const dest = el.getBoundingClientRect();
+        const id = overlaySeq.current++;
+        setDrawReveal({
+          id,
+          from: { x: src.left, y: src.top },
+          to: { x: dest.left, y: dest.top },
+          type: card.type,
+        });
+        drawTimer.current = setTimeout(() => {
+          setDrawReveal(null);
+          setDrawingCardId(null);
+        }, 880);
+        return;
+      }
+      if (tries++ < 40) requestAnimationFrame(place);
+      else setDrawingCardId(null); // hand never rendered the card; just show it
+    };
+    requestAnimationFrame(place);
   }
 
   useEffect(() => {
@@ -139,11 +191,18 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
           byName: nameOf(e.by),
           cards: e.cards,
           combo: e.combo,
+          pos: bannerPosFor(e.by),
         });
         clearTimeout(bannerTimer.current);
         bannerTimer.current = setTimeout(() => setPlayedBanner(null), 2800);
       } else if (e.type === 'card_drawn') {
-        flyCard(anchorRect('draw-anchor'), anchorRect(playerAnchorId(e.by)));
+        if (e.by === view!.youId && e.card) {
+          // Your own draw: reveal the real card face up, flying into your hand.
+          revealDraw(e.card);
+        } else {
+          // Someone else drew (or your Exploding Kitten draw): face-down fly.
+          flyCard(anchorRect('draw-anchor'), anchorRect(playerAnchorId(e.by)));
+        }
       } else if (e.type === 'card_given') {
         // Favor: a face-down card travels from the giver to the receiver. Public,
         // so every player sees the hand-off (face down — the card stays hidden).
@@ -168,6 +227,7 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
     () => () => {
       clearTimeout(bannerTimer.current);
       clearTimeout(toastTimer.current);
+      clearTimeout(drawTimer.current);
     },
     [],
   );
@@ -197,6 +257,7 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
 
   // Analyse the current hand selection into a play mode.
   const selectedCards = useMemo(() => hand.filter((c) => selected.includes(c.id)), [hand, selected]);
+  const options = view!.options;
   const playMode: PlayMode = useMemo(() => {
     const types = selectedCards.map((c) => c.type);
     const unique = new Set(types);
@@ -206,11 +267,13 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
       if (isCat(t)) return null; // single cat card has no effect
       return 'single';
     }
-    if (types.length === 2 && unique.size === 1) return 'pair';
-    if (types.length === 3 && unique.size === 1) return 'triple';
-    if (types.length === 5 && unique.size === 5) return 'five_different';
+    // Combos the host disabled aren't offered (the engine also rejects them).
+    if (types.length === 2 && unique.size === 1) return options.allowPairSteal ? 'pair' : null;
+    if (types.length === 3 && unique.size === 1) return options.allowTripleDemand ? 'triple' : null;
+    if (types.length === 5 && unique.size === 5)
+      return options.allowFiveDifferent ? 'five_different' : null;
     return null;
-  }, [selectedCards]);
+  }, [selectedCards, options]);
 
   if (!view || !me) return null;
 
@@ -327,8 +390,16 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
                 value={c.id}
                 as="div"
                 className="hand-item"
+                data-card-id={c.id}
                 initial={{ opacity: 0, y: 60, scale: 0.6 }}
-                animate={{ opacity: 1, y: 0, scale: 1 }}
+                // While its face-up draw reveal is in flight, the slot stays
+                // invisible (but holds layout, so the reveal lands on it); once
+                // the reveal clears, the card springs into view.
+                animate={
+                  drawingCardId === c.id
+                    ? { opacity: 0, y: 0, scale: 1 }
+                    : { opacity: 1, y: 0, scale: 1 }
+                }
                 exit={{ opacity: 0, y: -80, scale: 0.5 }}
                 transition={{ type: 'spring', stiffness: 350, damping: 26 }}
                 whileDrag={{ scale: 1.07, zIndex: 20 }}
@@ -424,6 +495,7 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
       <PlayedBanner banner={playedBanner} />
       <StolenToast toast={stolenToast} />
       <FlyingCards cards={flyingCards} />
+      <DrawReveal reveal={drawReveal} />
       <NopeStamp show={showNope} />
       <ExplosionFlash show={showBoom} />
       <SeeFutureModal cards={seeFuture} onClose={clearSeeFuture} />

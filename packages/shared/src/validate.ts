@@ -1,6 +1,6 @@
 import { CardType } from './cards.js';
 import type { ClientMessage } from './protocol.js';
-import type { ComboKind } from './state.js';
+import type { ComboKind, GameOptions } from './state.js';
 
 /**
  * Runtime validation of untrusted client messages — the trust boundary between
@@ -19,6 +19,8 @@ const CARD_TYPES: ReadonlySet<string> = new Set(Object.values(CardType));
 const MAX_CARDS_PER_PLAY = 5;
 /** Generous upper bound on a hand size for a `reorder_hand` permutation. */
 const MAX_HAND_IDS = 64;
+/** The boolean house-rule flags a client may toggle. */
+const OPTION_KEYS = ['allowPairSteal', 'allowTripleDemand', 'allowFiveDifferent'] as const;
 
 function isStr(v: unknown): v is string {
   return typeof v === 'string';
@@ -56,6 +58,19 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case 'set_ready':
       if (typeof m.ready !== 'boolean') return null;
       return { t: 'set_ready', ready: m.ready };
+
+    case 'set_options': {
+      if (typeof m.options !== 'object' || m.options === null) return null;
+      const src = m.options as Record<string, unknown>;
+      const options: Partial<GameOptions> = {};
+      for (const key of OPTION_KEYS) {
+        if (key in src) {
+          if (typeof src[key] !== 'boolean') return null;
+          options[key] = src[key] as boolean;
+        }
+      }
+      return { t: 'set_options', options };
+    }
 
     case 'start_game':
       return { t: 'start_game' };

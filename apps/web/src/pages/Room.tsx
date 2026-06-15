@@ -113,7 +113,7 @@ function ConnectedRoom({
         </div>
       )}
 
-      <HelpButton playerCount={sock.view.players.length} />
+      <HelpButton view={sock.view} />
 
       {sock.view.phase === 'lobby' ? (
         <Lobby view={sock.view} send={sock.send} />

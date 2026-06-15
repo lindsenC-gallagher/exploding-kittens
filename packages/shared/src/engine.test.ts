@@ -6,6 +6,7 @@ import {
   canRespondToPending,
   createLobby,
   reorderHand,
+  setOptions,
   startGame,
   type GameAction,
 } from './engine.js';
@@ -672,6 +673,143 @@ describe('win condition', () => {
     state = apply(state, { type: 'draw', playerId: me });
     expect(state.phase).toBe('gameOver');
     expect(state.winnerId).toBe(state.players.find((p) => p.id !== me)!.id);
+  });
+});
+
+describe('house rules (options)', () => {
+  it('defaults every combo to enabled in a fresh lobby', () => {
+    const lobby = createLobby('p0');
+    expect(lobby.options).toEqual({
+      allowPairSteal: true,
+      allowTripleDemand: true,
+      allowFiveDifferent: true,
+    });
+  });
+
+  it('lets the lobby toggle a rule off and carries it into the started game', () => {
+    let state = lobbyWith(3);
+    state = setOptions(state, { allowFiveDifferent: false });
+    expect(state.options.allowFiveDifferent).toBe(false);
+    expect(state.options.allowPairSteal).toBe(true); // others untouched
+    const r = startGame(state, 7);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.state.options.allowFiveDifferent).toBe(false);
+  });
+
+  it('ignores option changes once the game is in progress', () => {
+    const started3 = started(3);
+    const after = setOptions(started3, { allowPairSteal: false });
+    expect(after.options.allowPairSteal).toBe(true);
+    expect(after).toBe(started3); // unchanged reference
+  });
+
+  it('rejects a disabled five-different combo', () => {
+    const lobby = setOptions(lobbyWith(3), { allowFiveDifferent: false });
+    const r0 = startGame(lobby, 7);
+    if (!r0.ok) throw new Error(r0.error);
+    const state = r0.state;
+    const me = current(state).id;
+    const five = withFiveDifferentCards(state, me);
+    const r = applyAction(five.state, {
+      type: 'play',
+      playerId: me,
+      cardIds: five.ids,
+      combo: 'five_different',
+    });
+    expect(r.ok).toBe(false);
+  });
+
+  it('rejects a disabled pair, but still allows it when enabled', () => {
+    const lobby = lobbyWith(3);
+    // Disabled:
+    const offRes = startGame(setOptions(lobby, { allowPairSteal: false }), 7);
+    if (!offRes.ok) throw new Error(offRes.error);
+    let off = offRes.state;
+    const meOff = current(off).id;
+    const targetOff = off.players.find((p) => p.id !== meOff)!.id;
+    let a = withCardInHand(off, meOff, CardType.Tacocat);
+    off = a.state;
+    let b = withCardInHand(off, meOff, CardType.Tacocat);
+    off = b.state;
+    const rOff = applyAction(off, {
+      type: 'play',
+      playerId: meOff,
+      cardIds: [a.cardId, b.cardId],
+      combo: 'pair',
+      target: targetOff,
+    });
+    expect(rOff.ok).toBe(false);
+
+    // Enabled (default):
+    const onRes = startGame(lobby, 7);
+    if (!onRes.ok) throw new Error(onRes.error);
+    let on = onRes.state;
+    const meOn = current(on).id;
+    const targetOn = on.players.find((p) => p.id !== meOn)!.id;
+    a = withCardInHand(on, meOn, CardType.Cattermelon);
+    on = a.state;
+    b = withCardInHand(on, meOn, CardType.Cattermelon);
+    on = b.state;
+    const rOn = applyAction(on, {
+      type: 'play',
+      playerId: meOn,
+      cardIds: [a.cardId, b.cardId],
+      combo: 'pair',
+      target: targetOn,
+    });
+    expect(rOn.ok).toBe(true);
+  });
+});
+
+/** Give the current player five distinct non-cat cards (top-level helper). */
+function withFiveDifferentCards(state: GameState, me: string): { state: GameState; ids: string[] } {
+  const types = [
+    CardType.Attack,
+    CardType.Skip,
+    CardType.Favor,
+    CardType.Shuffle,
+    CardType.SeeTheFuture,
+  ];
+  const ids: string[] = [];
+  for (const t of types) {
+    const inj = withCardInHand(state, me, t);
+    state = inj.state;
+    ids.push(inj.cardId);
+  }
+  return { state, ids };
+}
+
+describe('draw reveal redaction', () => {
+  it('attaches the drawn card for the drawer but strips it for everyone else', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const other = state.players.find((p) => p.id !== me)!.id;
+    // Ensure the top card is an ordinary card (not an Exploding Kitten).
+    const top: Card = { id: 'draw-top', type: CardType.Skip };
+    state = { ...state, drawPile: [top, ...state.drawPile] };
+
+    const r = applyAction(state, { type: 'draw', playerId: me });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const drawn = r.events.find((e) => e.type === 'card_drawn');
+    expect(drawn && drawn.type === 'card_drawn' && drawn.card?.id).toBe('draw-top');
+
+    const forDrawer = redactEventForRecipient(drawn!, me);
+    const forOther = redactEventForRecipient(drawn!, other);
+    expect(forDrawer.type === 'card_drawn' && forDrawer.card?.id).toBe('draw-top');
+    expect(forOther.type === 'card_drawn' && forOther.card).toBeUndefined();
+  });
+
+  it('never attaches a card when an Exploding Kitten is drawn', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const ek: Card = { id: 'ek-top', type: CardType.ExplodingKitten };
+    state = { ...state, drawPile: [ek, ...state.drawPile] };
+    const r = applyAction(state, { type: 'draw', playerId: me });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const drawn = r.events.find((e) => e.type === 'card_drawn');
+    expect(drawn && drawn.type === 'card_drawn' && drawn.card).toBeUndefined();
   });
 });
 

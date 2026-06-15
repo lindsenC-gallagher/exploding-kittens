@@ -15,6 +15,27 @@ export interface PlayerState {
 export type ComboKind = 'pair' | 'triple' | 'five_different';
 
 /**
+ * Host-configurable "house rules" set in the lobby before the game starts.
+ * Each flag enables an optional combo; all default to on (the faithful base
+ * game). Disabling one makes the engine reject that combo and hides it client-side.
+ */
+export interface GameOptions {
+  /** 2 matching cards → blindly steal a random card. */
+  allowPairSteal: boolean;
+  /** 3 matching cards → name a card and take it if the target has it. */
+  allowTripleDemand: boolean;
+  /** 5 different cards → take any card from the discard (the "5-card rule"). */
+  allowFiveDifferent: boolean;
+}
+
+/** Faithful base-game defaults: every combo enabled. */
+export const DEFAULT_OPTIONS: GameOptions = {
+  allowPairSteal: true,
+  allowTripleDemand: true,
+  allowFiveDifferent: true,
+};
+
+/**
  * An action that has been played and is sitting in the Nope window, awaiting
  * resolution. `nopes` counts how many Nope cards have stacked: even => the
  * action resolves, odd => it is cancelled.
@@ -75,6 +96,8 @@ export type AwaitingChoice =
 export interface GameState {
   phase: GamePhase;
   hostId: string;
+  /** Host-configurable house rules, fixed once the game starts. */
+  options: GameOptions;
   players: PlayerState[];
   currentPlayerIndex: number;
   /** Turns the current player must still take (>=1 while playing). */
@@ -101,7 +124,18 @@ export type GameEvent =
   | { type: 'cards_played'; by: string; cards: Card[]; combo?: ComboKind }
   | { type: 'nope'; by: string; nopes: number }
   | { type: 'action_resolved'; kind: PendingAction['kind']; cancelled: boolean }
-  | { type: 'card_drawn'; by: string }
+  | {
+      type: 'card_drawn';
+      by: string;
+      /**
+       * The card that was drawn. Present only on the copy routed to the drawer
+       * (so their client can reveal it face up as it flies into their hand);
+       * redacted for everyone else so the draw stays hidden. See
+       * `redactEventForRecipient`. Omitted when the draw was an Exploding Kitten
+       * (the defuse/explosion flow takes over visually).
+       */
+      card?: Card;
+    }
   | { type: 'see_future'; by: string; cards: Card[] }
   | { type: 'shuffled' }
   | { type: 'favor_requested'; from: string; to: string }

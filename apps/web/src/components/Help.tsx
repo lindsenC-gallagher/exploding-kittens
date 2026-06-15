@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CARD_NAMES, CardType } from '@ek/shared';
+import { CARD_NAMES, CardType, type ClientGameView } from '@ek/shared';
 import { CARD_VISUALS } from '../data/cardVisuals.js';
 
 // Single-play cards, in a sensible reading order. Cat cards are grouped below.
@@ -25,10 +25,23 @@ function HelpCard({ type }: { type: CardType }) {
   );
 }
 
+/** Combo rules in display order, keyed to the house-rule flag that gates each. */
+const COMBOS: { key: keyof ClientGameView['options']; icon: string; label: string; effect: string }[] = [
+  { key: 'allowPairSteal', icon: '👯', label: 'Pair', effect: '(2 matching) → blind-steal a random card.' },
+  { key: 'allowTripleDemand', icon: '🎴', label: 'Three matching', effect: '→ name a card; take it if they have it.' },
+  { key: 'allowFiveDifferent', icon: '🌈', label: 'Five different', effect: '→ take any card from the discard.' },
+];
+
 /** Floating "?" button + a terse rules/cards reference. Shown in lobby and game. */
-export function HelpButton({ playerCount }: { playerCount: number }) {
+export function HelpButton({ view }: { view: ClientGameView }) {
   const [open, setOpen] = useState(false);
+  const playerCount = view.players.length;
+  const ongoing = view.phase !== 'lobby';
   const eks = Math.max(0, playerCount - 1);
+  // Each player is dealt exactly one Defuse; the rest of the 6 stay in the deck.
+  const defusesDealt = Math.min(playerCount, 6);
+  const defusesInDeck = Math.max(0, 6 - playerCount);
+  const options = view.options;
   return (
     <>
       <button className="help-fab" aria-label="Help & rules" onClick={() => setOpen(true)}>
@@ -66,12 +79,30 @@ export function HelpButton({ playerCount }: { playerCount: number }) {
               </ul>
 
               <div className="help-counts">
-                <span>
-                  🙀 Exploding Kittens: <b>{eks}</b> (players − 1)
-                </span>
-                <span>
-                  🧯 Defuses: <b>6</b> (1 each, rest in deck)
-                </span>
+                {ongoing ? (
+                  <>
+                    <span>
+                      🙀 Exploding Kittens: <b>{eks}</b>
+                    </span>
+                    <span>
+                      🧯 Defuses: <b>{defusesDealt}</b> dealt
+                      {defusesInDeck > 0 ? (
+                        <>
+                          , <b>{defusesInDeck}</b> in the deck
+                        </>
+                      ) : null}
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <span>
+                      🙀 Exploding Kittens: <b>{eks}</b> (players − 1)
+                    </span>
+                    <span>
+                      🧯 Defuses: <b>6</b> (1 each, rest in deck)
+                    </span>
+                  </>
+                )}
               </div>
 
               <h3 className="help-h">Cards</h3>
@@ -88,15 +119,15 @@ export function HelpButton({ playerCount }: { playerCount: number }) {
 
               <h3 className="help-h">Combos · play several at once</h3>
               <ul className="help-rules">
-                <li>
-                  👯 <b>Pair</b> (2 matching) → blind-steal a random card.
-                </li>
-                <li>
-                  🎴 <b>Three matching</b> → name a card; take it if they have it.
-                </li>
-                <li>
-                  🌈 <b>Five different</b> → take any card from the discard.
-                </li>
+                {COMBOS.map((c) => {
+                  const off = !options[c.key];
+                  return (
+                    <li key={c.key} className={off ? 'rule-off' : undefined}>
+                      {c.icon} <b>{c.label}</b> {c.effect}
+                      {off && <span className="rule-off-tag"> — disabled</span>}
+                    </li>
+                  );
+                })}
               </ul>
             </motion.div>
           </motion.div>

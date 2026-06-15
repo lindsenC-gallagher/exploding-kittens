@@ -49,6 +49,23 @@ describe('parseClientMessage — well-formed messages', () => {
     expect(parseClientMessage(j({ t: 'join' }))).toEqual({ t: 'join', name: '' });
     expect(parseClientMessage(j({ t: 'join', name: 42 }))).toEqual({ t: 'join', name: '' });
   });
+
+  it('accepts set_options with a partial set of boolean flags', () => {
+    expect(parseClientMessage(j({ t: 'set_options', options: { allowFiveDifferent: false } }))).toEqual({
+      t: 'set_options',
+      options: { allowFiveDifferent: false },
+    });
+    expect(
+      parseClientMessage(
+        j({ t: 'set_options', options: { allowPairSteal: true, allowTripleDemand: false } }),
+      ),
+    ).toEqual({ t: 'set_options', options: { allowPairSteal: true, allowTripleDemand: false } });
+    // An empty options object is valid (a no-op merge) and unknown keys are dropped.
+    expect(parseClientMessage(j({ t: 'set_options', options: { bogus: true } }))).toEqual({
+      t: 'set_options',
+      options: {},
+    });
+  });
 });
 
 describe('parseClientMessage — malformed input is rejected (DoS hardening)', () => {
@@ -103,6 +120,13 @@ describe('parseClientMessage — malformed input is rejected (DoS hardening)', (
     expect(parseClientMessage(j({ t: 'steal_pick' }))).toBeNull();
     expect(parseClientMessage(j({ t: 'steal_pick', cardIndex: -1 }))).toBeNull();
     expect(parseClientMessage(j({ t: 'steal_pick', cardIndex: 1.5 }))).toBeNull();
+  });
+
+  it('rejects set_options with a non-object or non-boolean flag', () => {
+    expect(parseClientMessage(j({ t: 'set_options' }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'set_options', options: 'all' }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'set_options', options: null }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'set_options', options: { allowPairSteal: 'yes' } }))).toBeNull();
   });
 
   it('rejects oversized frames', () => {
