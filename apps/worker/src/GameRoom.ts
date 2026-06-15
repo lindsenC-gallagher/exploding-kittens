@@ -4,6 +4,8 @@ import {
   createLobby,
   parseClientMessage,
   projectView,
+  redactEventForRecipient,
+  reorderHand,
   startGame,
   RULES,
   CardType,
@@ -272,6 +274,26 @@ export class GameRoom {
         await this.runAction(ws, { type: 'give_favor_card', playerId: pid, cardId: msg.cardId });
         return;
 
+      case 'steal_pick':
+        await this.runAction(ws, { type: 'steal_pick', playerId: pid, cardIndex: msg.cardIndex });
+        return;
+
+      case 'reorder_hand': {
+        // A private, cosmetic rearrange: it touches only this player's hand
+        // order (no version bump, no events, no timers). Applied outside the
+        // action pipeline so it can't reset the Nope window or churn versions.
+        const next = reorderHand(this.game, pid, msg.order);
+        if (!next) return; // not a valid permutation — ignore
+        this.game = next;
+        await this.persist();
+        // Order is private, so only this player's own sockets need the update.
+        for (const s of this.sockets()) {
+          const meta = s.deserializeAttachment() as SocketMeta | null;
+          if (meta?.playerId === pid) this.sendView(s, pid);
+        }
+        return;
+      }
+
       case 'leave': {
         // Never mutate players mid-game (it would corrupt turn order / deck math).
         // Treat an in-game leave as a disconnect; only remove in the lobby.
@@ -397,6 +419,12 @@ export class GameRoom {
       if (player.hand.length === 0) return;
       const idx = cryptoSeed() % player.hand.length;
       await this.runAction(null, { type: 'give_favor_card', playerId: player.id, cardId: player.hand[idx].id });
+    } else if (awaiting.type === 'steal_pick') {
+      // Thief never picked — take a random card on their behalf so the game
+      // doesn't stall. (A pair always steals; the only "choice" is which one.)
+      const target = this.game.players.find((p) => p.id === awaiting.fromPlayerId);
+      const cardIndex = target && target.hand.length > 0 ? cryptoSeed() % target.hand.length : 0;
+      await this.runAction(null, { type: 'steal_pick', playerId: player.id, cardIndex });
     } else {
       // defuse_or_explode: auto-play the Defuse (reinsert at a random spot) rather
       // than punishing a disconnect with elimination.
@@ -453,17 +481,22 @@ export class GameRoom {
   }
 
   /**
-   * Broadcast events to all players, routing the private See the Future reveal
-   * only to the viewing player (it exposes hidden deck information).
+   * Broadcast events to all players, redacting hidden information per recipient:
+   * the See the Future reveal goes only to the viewing player (as its own
+   * message), and a steal's card identity is stripped for everyone but the thief
+   * and the victim (see {@link redactEventForRecipient}).
    */
   private broadcastEvents(events: GameEvent[]): void {
-    const publicEvents = events.filter((e) => e.type !== 'see_future');
     for (const ws of this.sockets()) {
       const meta = ws.deserializeAttachment() as SocketMeta | null;
       if (!meta) continue;
+      const pid = meta.playerId;
+      const publicEvents = events
+        .filter((e) => e.type !== 'see_future')
+        .map((e) => redactEventForRecipient(e, pid));
       if (publicEvents.length) this.send(ws, { t: 'events', events: publicEvents });
       for (const e of events) {
-        if (e.type === 'see_future' && e.by === meta.playerId) {
+        if (e.type === 'see_future' && e.by === pid) {
           this.send(ws, { t: 'see_future', cards: e.cards });
         }
       }

@@ -10,6 +10,7 @@ export function Opponents({ view }: { view: ClientGameView }) {
         return (
           <motion.div
             key={p.id}
+            id={`opp-anchor-${p.id}`}
             className={`opponent ${active ? 'active' : ''} ${p.alive ? '' : 'dead'}`}
             layout
             animate={active ? { scale: [1, 1.05, 1] } : { scale: 1 }}

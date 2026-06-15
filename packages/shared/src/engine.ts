@@ -22,7 +22,8 @@ export type GameAction =
   | { type: 'resolve_pending' }
   | { type: 'draw'; playerId: string }
   | { type: 'defuse'; playerId: string; cardId: string; insertPosition: number }
-  | { type: 'give_favor_card'; playerId: string; cardId: string };
+  | { type: 'give_favor_card'; playerId: string; cardId: string }
+  | { type: 'steal_pick'; playerId: string; cardIndex: number };
 
 let cardCounter = 0;
 function makeCard(type: CardType): Card {
@@ -242,6 +243,8 @@ function route(
       return handleDefuse(state, action, events);
     case 'give_favor_card':
       return handleGiveFavor(state, action, events);
+    case 'steal_pick':
+      return handleStealPick(state, action, events);
     default:
       return { ok: false, error: 'Unknown action' };
   }
@@ -441,7 +444,10 @@ function applyEffect(
       break;
     }
     case 'pair': {
-      stealRandom(state, actor.id, pending.target, 'pair', events, rngSeed);
+      // A pair lets you take a *random* card — faithfully, the thief picks one
+      // blindly from the target's face-down hand. Open that choice rather than
+      // resolving it server-side, so the victim can rearrange to thwart them.
+      beginStealPick(state, actor.id, pending.target, 'pair');
       break;
     }
     case 'triple': {
@@ -457,22 +463,44 @@ function applyEffect(
   }
 }
 
-function stealRandom(
+/**
+ * Open a blind steal: the thief must pick one of the target's face-down cards
+ * (handled by {@link handleStealPick}). No-op (combo fizzles) if the target has
+ * no cards to take.
+ */
+function beginStealPick(
   state: GameState,
   byId: string,
   targetId: string | undefined,
   via: ComboKind,
-  events: GameEvent[],
-  rngSeed?: number,
 ): void {
   const by = state.players.find((p) => p.id === byId);
   const target = state.players.find((p) => p.id === targetId);
   if (!by || !target || !target.alive || target.hand.length === 0) return;
-  const rng = createRng(rngSeed ?? (state.version + 7) * 40503);
-  const idx = rng.int(target.hand.length);
+  state.awaiting = { type: 'steal_pick', playerId: by.id, fromPlayerId: target.id, via };
+}
+
+/** Resolve a blind steal once the thief picks an index into the target's hand. */
+function handleStealPick(
+  state: GameState,
+  action: Extract<GameAction, { type: 'steal_pick' }>,
+  events: GameEvent[],
+): ApplyResult | null {
+  const awaiting = state.awaiting;
+  if (!awaiting || awaiting.type !== 'steal_pick') return { ok: false, error: 'No steal to resolve' };
+  if (awaiting.playerId !== action.playerId) return { ok: false, error: 'Not your steal to make' };
+  const by = state.players.find((p) => p.id === action.playerId);
+  const target = state.players.find((p) => p.id === awaiting.fromPlayerId);
+  const via = awaiting.via;
+  state.awaiting = undefined;
+  // If the target emptied out somehow, the steal simply fizzles.
+  if (!by || !target || !target.alive || target.hand.length === 0) return null;
+  // Clamp the (untrusted) index so an out-of-range pick can't crash or miss.
+  const idx = Math.max(0, Math.min(action.cardIndex, target.hand.length - 1));
   const [card] = target.hand.splice(idx, 1);
   by.hand.push(card);
-  events.push({ type: 'stole', by: byId, from: target.id, viaCombo: via });
+  events.push({ type: 'stole', by: by.id, from: target.id, viaCombo: via, card });
+  return null;
 }
 
 function stealNamed(
@@ -493,7 +521,7 @@ function stealNamed(
   }
   const [card] = target.hand.splice(idx, 1);
   by.hand.push(card);
-  events.push({ type: 'stole', by: byId, from: target.id, viaCombo: 'triple' });
+  events.push({ type: 'stole', by: byId, from: target.id, viaCombo: 'triple', card });
 }
 
 function takeFromDiscard(
@@ -612,6 +640,30 @@ function handleGiveFavor(
 /** Re-export for the server to inject a true-random deck order on Shuffle. */
 export function setDrawPileOrder(state: GameState, order: Card[]): GameState {
   return { ...state, drawPile: order };
+}
+
+/**
+ * Reorder one player's own hand to the given id order. A player's hand order is
+ * private (others only see a count) but it matters for the blind pair-steal, so
+ * this is server-authoritative. `order` must be an exact permutation of the
+ * player's current hand ids; anything else (wrong length, unknown/duplicate id)
+ * returns null and the caller should ignore it. Does not bump `version` — it is
+ * a private, cosmetic rearrange applied outside the main action pipeline.
+ */
+export function reorderHand(state: GameState, playerId: string, order: string[]): GameState | null {
+  const player = state.players.find((p) => p.id === playerId);
+  if (!player || order.length !== player.hand.length) return null;
+  const byId = new Map(player.hand.map((c) => [c.id, c]));
+  const next: Card[] = [];
+  const seen = new Set<string>();
+  for (const id of order) {
+    const card = byId.get(id);
+    if (!card || seen.has(id)) return null; // unknown or duplicate id => not a permutation
+    seen.add(id);
+    next.push(card);
+  }
+  const players = state.players.map((p) => (p.id === playerId ? { ...p, hand: next } : p));
+  return { ...state, players };
 }
 
 export { NOPEABLE_ACTIONS };

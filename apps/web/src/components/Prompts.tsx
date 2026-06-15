@@ -1,13 +1,13 @@
-import { useState } from 'react';
-import { motion } from 'framer-motion';
+import { useEffect, useRef, useState } from 'react';
+import { motion, useMotionValue } from 'framer-motion';
 import {
   CARD_NAMES,
   CAT_CARDS,
+  CardType,
   type Card as CardModel,
-  type CardType,
   type ClientGameView,
 } from '@ek/shared';
-import { Card } from './Card.js';
+import { Card, CardBack } from './Card.js';
 
 function ModalShell({ children }: { children: React.ReactNode }) {
   return (
@@ -23,7 +23,13 @@ function ModalShell({ children }: { children: React.ReactNode }) {
   );
 }
 
-/** Draw revealed an Exploding Kitten — choose where to secretly reinsert it. */
+/**
+ * Draw revealed an Exploding Kitten. The Defuse is mandatory and fires
+ * automatically — the player's only decision is *where* to secretly slip the
+ * kitten back into the deck. The deck is shown as an overlapping fan; drag the
+ * kitten across it and drop to bury it anywhere, or use the Top/Middle/Bottom
+ * shortcuts. Positions are 0..drawPileCount (0 = top, next to be drawn).
+ */
 export function DefusePrompt({
   view,
   defuseCardId,
@@ -33,40 +39,153 @@ export function DefusePrompt({
   defuseCardId: string;
   onDefuse: (cardId: string, insertPosition: number) => void;
 }) {
-  // Positions 0..drawPileCount (0 = top, next to be drawn).
   const max = view.drawPileCount;
-  const [pos, setPos] = useState(Math.floor(max / 2));
+  const deckRef = useRef<HTMLDivElement>(null);
+  const [deckW, setDeckW] = useState(0);
+  const [pos, setPos] = useState(() => Math.floor(max / 2));
+  const x = useMotionValue(0);
+  const dragging = useRef(false);
+
+  // Measure the deck track so the kitten's x maps onto insertion positions.
+  useEffect(() => {
+    const measure = () => setDeckW(deckRef.current?.clientWidth ?? 0);
+    measure();
+    window.addEventListener('resize', measure);
+    return () => window.removeEventListener('resize', measure);
+  }, []);
+
+  const xForPos = (p: number) => (max <= 0 || deckW <= 0 ? 0 : (p / max) * deckW);
+  const posForX = (px: number) =>
+    max <= 0 || deckW <= 0 ? 0 : Math.max(0, Math.min(max, Math.round((px / deckW) * max)));
+
+  // Park the kitten over the current position when not actively dragging.
+  useEffect(() => {
+    if (!dragging.current) x.set(xForPos(pos));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deckW, pos]);
+
+  const commit = (p: number) => onDefuse(defuseCardId, Math.max(0, Math.min(p, max)));
+
+  const BACK_W = 50;
+  const backCount = Math.min(Math.max(max, 1), 24); // visual only; mapping uses `max`
+  const canDrag = deckW > 0 && max > 0;
+
   return (
     <ModalShell>
       <h2 className="title" style={{ fontSize: 28 }}>
-        🙀 Exploding Kitten!
+        🧯 Phew — Defused!
       </h2>
       <p className="muted">
-        Play your Defuse and secretly slip the kitten back into the deck. Where should it go?
+        Your Defuse fired automatically and saved you. Now secretly hide the Exploding Kitten back in
+        the deck — <b>drag it onto the deck and drop</b> to bury it anywhere, or tap a shortcut.
       </p>
-      <div style={{ margin: '20px 0' }}>
-        <input
-          type="range"
-          min={0}
-          max={max}
-          value={pos}
-          style={{ width: '100%' }}
-          onChange={(e) => setPos(Number(e.target.value))}
-        />
-        <div className="row" style={{ justifyContent: 'space-between' }}>
-          <span className="muted">Top (next draw)</span>
+
+      <div className="defuse-deck-area">
+        <div className="defuse-kitten-track">
+          <motion.div
+            className="defuse-kitten"
+            style={{ x }}
+            drag={canDrag ? 'x' : false}
+            dragConstraints={{ left: 0, right: deckW }}
+            dragElastic={0}
+            dragMomentum={false}
+            onDragStart={() => {
+              dragging.current = true;
+            }}
+            onDrag={() => setPos(posForX(x.get()))}
+            onDragEnd={() => {
+              dragging.current = false;
+              commit(posForX(x.get()));
+            }}
+            whileDrag={{ scale: 1.05 }}
+          >
+            <div className="defuse-kitten-center">
+              <Card type={CardType.ExplodingKitten} />
+              <div className="defuse-arrow">⬇</div>
+            </div>
+          </motion.div>
+        </div>
+
+        <div className="defuse-deck" ref={deckRef}>
+          {Array.from({ length: backCount }).map((_, i) => (
+            <div
+              className="defuse-deck-card"
+              key={i}
+              style={{
+                left:
+                  backCount > 1
+                    ? `calc(${(i / (backCount - 1)) * 100}% - ${(i / (backCount - 1)) * BACK_W}px)`
+                    : 0,
+                zIndex: i,
+              }}
+            >
+              <CardBack />
+            </div>
+          ))}
+          {/* End markers so it's obvious which side is the top vs the bottom. */}
+          <div className="defuse-edge left" />
+          <div className="defuse-edge right" />
+          {canDrag && <motion.div className="defuse-insert-line" style={{ x }} />}
+        </div>
+
+        <div className="defuse-ends">
+          <span className="defuse-cap top">⬅ TOP · next draw</span>
           <span className="badge">
             position {pos} of {max}
           </span>
-          <span className="muted">Bottom</span>
+          <span className="defuse-cap bottom">BOTTOM ➡</span>
         </div>
       </div>
+
       <div className="row" style={{ justifyContent: 'center', gap: 10 }}>
-        <button onClick={() => onDefuse(defuseCardId, 0)}>🔝 On top (evil)</button>
-        <button onClick={() => onDefuse(defuseCardId, pos)}>🧯 Defuse here</button>
-        <button className="secondary" onClick={() => onDefuse(defuseCardId, max)}>
+        <button onClick={() => commit(0)}>🔝 Top (evil)</button>
+        <button className="secondary" onClick={() => commit(Math.floor(max / 2))}>
+          📍 Middle
+        </button>
+        <button className="secondary" onClick={() => commit(max)}>
           Bottom
         </button>
+      </div>
+    </ModalShell>
+  );
+}
+
+/**
+ * The thief blindly picks one of the target's face-down cards (a faithful pair
+ * "random" steal). They only ever see card backs — the pick is pure chance,
+ * and the victim may rearrange their hand while this is open.
+ */
+export function StealPickModal({
+  fromName,
+  count,
+  onPick,
+}: {
+  fromName: string;
+  count: number;
+  onPick: (index: number) => void;
+}) {
+  return (
+    <ModalShell>
+      <h2 className="title" style={{ fontSize: 26 }}>
+        🙈 Blind steal from {fromName}
+      </h2>
+      <p className="muted">
+        Their hand is face-down. Pick one — you won&apos;t know what you&apos;re grabbing until it&apos;s
+        yours!
+      </p>
+      <div
+        className="row"
+        style={{ flexWrap: 'wrap', justifyContent: 'center', margin: '18px 0', gap: 12 }}
+      >
+        {count === 0 ? (
+          <span className="muted">They have no cards to take.</span>
+        ) : (
+          Array.from({ length: count }).map((_, i) => (
+            <motion.div key={i} whileHover={{ y: -12, scale: 1.05 }} whileTap={{ scale: 0.95 }}>
+              <CardBack selectable label={`#${i + 1}`} onClick={() => onPick(i)} />
+            </motion.div>
+          ))
+        )}
       </div>
     </ModalShell>
   );

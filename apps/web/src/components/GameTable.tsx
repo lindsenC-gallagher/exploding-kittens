@@ -1,17 +1,29 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { AnimatePresence, motion } from 'framer-motion';
+import { AnimatePresence, Reorder, motion } from 'framer-motion';
 import { CardType, type CardType as CT, type ClientMessage } from '@ek/shared';
 import type { UseGameSocket } from '../hooks/useGameSocket.js';
 import { Card } from './Card.js';
 import { Opponents } from './Opponents.js';
 import { Piles } from './Piles.js';
 import { EventLog } from './EventLog.js';
-import { ExplosionFlash, NopeStamp, SeeFutureModal, WinScreen } from './Overlays.js';
+import {
+  ExplosionFlash,
+  FlyingCards,
+  NopeStamp,
+  PlayedBanner,
+  SeeFutureModal,
+  StolenToast,
+  WinScreen,
+  type FlyingCard,
+  type PlayedBannerData,
+  type StolenToastData,
+} from './Overlays.js';
 import {
   DefusePrompt,
   DiscardPicker,
   FavorPrompt,
   NamedCardPicker,
+  StealPickModal,
   TargetPicker,
 } from './Prompts.js';
 
@@ -22,6 +34,10 @@ type Flow =
   | { step: 'target'; mode: 'favor' | 'pair' | 'triple' }
   | { step: 'name'; target: string }
   | { step: 'discard' };
+
+/** Flying-card visual size (must match `.flying-card` in index.css). */
+const FLY_W = 70;
+const FLY_H = 98;
 
 export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () => void }) {
   const { view, send, lastEvents, seeFuture, clearSeeFuture } = sock;
@@ -35,42 +51,126 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
   const me = view!.players.find((p) => p.id === view!.youId);
   const hand = view?.yourHand ?? [];
   const isMyTurn = view!.currentPlayerId === view!.youId;
-  const canAct = isMyTurn && !view!.nope && !view!.prompt && view!.phase === 'playing';
+  // A blind steal in progress blocks the thief from also drawing/playing.
+  const canAct =
+    isMyTurn && !view!.nope && !view!.prompt && !view!.stealPick && view!.phase === 'playing';
 
-  // Analyse the current hand selection into a play mode.
-  const selectedCards = useMemo(
-    () => hand.filter((c) => selected.includes(c.id)),
-    [hand, selected],
+  // ---- Local hand order (drag-to-arrange, persisted server-side) ------------
+  // Hand order is the player's own arrangement and is authoritative server-side
+  // (it decides which card a thief grabs on a blind steal). We keep a local
+  // order for snappy dragging and reconcile it with the server hand each update.
+  const [order, setOrder] = useState<string[]>(() => hand.map((c) => c.id));
+  const lastSentOrder = useRef<string[]>(hand.map((c) => c.id));
+  const handKey = hand.map((c) => c.id).join(',');
+  useEffect(() => {
+    const ids = handKey ? handKey.split(',') : [];
+    setOrder((prev) => {
+      const idSet = new Set(ids);
+      const kept = prev.filter((id) => idSet.has(id)); // keep my arrangement
+      const keptSet = new Set(kept);
+      const added = ids.filter((id) => !keptSet.has(id)); // new cards go to the end
+      const next = [...kept, ...added];
+      const same = next.length === prev.length && next.every((id, i) => id === prev[i]);
+      if (same) return prev;
+      // A server-driven change (draw/steal/give) becomes the new baseline so we
+      // don't echo it back as a reorder.
+      lastSentOrder.current = next;
+      return next;
+    });
+  }, [handKey]);
+
+  const handById = useMemo(() => new Map(hand.map((c) => [c.id, c] as const)), [hand]);
+  const orderedCards = useMemo(
+    () => order.map((id) => handById.get(id)).filter((c): c is (typeof hand)[number] => !!c),
+    [order, handById],
   );
-  const playMode: PlayMode = useMemo(() => {
-    const types = selectedCards.map((c) => c.type);
-    const unique = new Set(types);
-    if (types.length === 1) {
-      const t = types[0];
-      if ([CardType.Defuse, CardType.Nope, CardType.ExplodingKitten].includes(t)) return null;
-      if (isCat(t)) return null; // single cat card has no effect
-      return 'single';
-    }
-    if (types.length === 2 && unique.size === 1) return 'pair';
-    if (types.length === 3 && unique.size === 1) return 'triple';
-    if (types.length === 5 && unique.size === 5) return 'five_different';
-    return null;
-  }, [selectedCards]);
 
-  // Transient animation triggers from the event stream (does NOT touch selection,
-  // so an unrelated opponent event can't wipe a combo you're assembling).
+  function persistOrderIfChanged() {
+    const cur = order;
+    const prev = lastSentOrder.current;
+    const same = cur.length === prev.length && cur.every((id, i) => id === prev[i]);
+    if (same) return;
+    lastSentOrder.current = cur;
+    send({ t: 'reorder_hand', order: cur });
+  }
+
+  // ---- Transient overlays driven by the event stream ------------------------
+  const [playedBanner, setPlayedBanner] = useState<PlayedBannerData | null>(null);
+  const [stolenToast, setStolenToast] = useState<StolenToastData | null>(null);
+  const [flyingCards, setFlyingCards] = useState<FlyingCard[]>([]);
+  const overlaySeq = useRef(0);
+  const bannerTimer = useRef<ReturnType<typeof setTimeout>>();
+  const toastTimer = useRef<ReturnType<typeof setTimeout>>();
+
+  const nameOf = (id: string) => view!.players.find((p) => p.id === id)?.name ?? 'Someone';
+
+  // The on-screen anchor for a player: your own hand, or their opponent box.
+  function playerAnchorId(pid: string): string {
+    return pid === view!.youId ? 'hand-anchor' : `opp-anchor-${pid}`;
+  }
+  function anchorRect(id: string): DOMRect | null {
+    if (typeof document === 'undefined') return null;
+    return document.getElementById(id)?.getBoundingClientRect() ?? null;
+  }
+  // Fly a face-down card between two anchors. Used for draws (pile -> drawer) and
+  // Favors (giver -> receiver, which everyone sees, face down).
+  function flyCard(src: DOMRect | null, dest: DOMRect | null) {
+    if (!src || !dest) return;
+    const from = { x: src.left + src.width / 2 - FLY_W / 2, y: src.top + src.height / 2 - FLY_H / 2 };
+    const to = { x: dest.left + dest.width / 2 - FLY_W / 2, y: dest.top + dest.height / 2 - FLY_H / 2 };
+    const id = overlaySeq.current++;
+    setFlyingCards((cs) => [...cs, { id, from, to }]);
+    setTimeout(() => setFlyingCards((cs) => cs.filter((c) => c.id !== id)), 750);
+  }
+
   useEffect(() => {
     if (!lastEvents || lastEvents.id === seenEvents.current) return;
     seenEvents.current = lastEvents.id;
-    if (lastEvents.events.some((e) => e.type === 'nope')) {
-      setShowNope(true);
-      setTimeout(() => setShowNope(false), 1100);
+    for (const e of lastEvents.events) {
+      if (e.type === 'nope') {
+        setShowNope(true);
+        setTimeout(() => setShowNope(false), 1100);
+      } else if (e.type === 'exploded') {
+        setShowBoom(true);
+        setTimeout(() => setShowBoom(false), 1300);
+      } else if (e.type === 'cards_played') {
+        setPlayedBanner({
+          id: overlaySeq.current++,
+          byName: nameOf(e.by),
+          cards: e.cards,
+          combo: e.combo,
+        });
+        clearTimeout(bannerTimer.current);
+        bannerTimer.current = setTimeout(() => setPlayedBanner(null), 2800);
+      } else if (e.type === 'card_drawn') {
+        flyCard(anchorRect('draw-anchor'), anchorRect(playerAnchorId(e.by)));
+      } else if (e.type === 'card_given') {
+        // Favor: a face-down card travels from the giver to the receiver. Public,
+        // so every player sees the hand-off (face down — the card stays hidden).
+        flyCard(anchorRect(playerAnchorId(e.from)), anchorRect(playerAnchorId(e.to)));
+      } else if (e.type === 'stole' && e.card) {
+        // Only the thief and victim receive the card (others get it redacted).
+        const mine = e.by === view!.youId;
+        setStolenToast({
+          id: overlaySeq.current++,
+          mine,
+          otherName: nameOf(mine ? e.from : e.by),
+          card: e.card,
+        });
+        clearTimeout(toastTimer.current);
+        toastTimer.current = setTimeout(() => setStolenToast(null), 3600);
+      }
     }
-    if (lastEvents.events.some((e) => e.type === 'exploded')) {
-      setShowBoom(true);
-      setTimeout(() => setShowBoom(false), 1300);
-    }
-  }, [lastEvents]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [lastEvents, view]);
+
+  useEffect(
+    () => () => {
+      clearTimeout(bannerTimer.current);
+      clearTimeout(toastTimer.current);
+    },
+    [],
+  );
 
   // Clear any in-progress selection/flow whenever you can no longer act
   // (turn passed, a prompt opened, or a Nope window started).
@@ -94,6 +194,23 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
     const h = setInterval(tick, 100);
     return () => clearInterval(h);
   }, [nopeDeadline]);
+
+  // Analyse the current hand selection into a play mode.
+  const selectedCards = useMemo(() => hand.filter((c) => selected.includes(c.id)), [hand, selected]);
+  const playMode: PlayMode = useMemo(() => {
+    const types = selectedCards.map((c) => c.type);
+    const unique = new Set(types);
+    if (types.length === 1) {
+      const t = types[0];
+      if ([CardType.Defuse, CardType.Nope, CardType.ExplodingKitten].includes(t)) return null;
+      if (isCat(t)) return null; // single cat card has no effect
+      return 'single';
+    }
+    if (types.length === 2 && unique.size === 1) return 'pair';
+    if (types.length === 3 && unique.size === 1) return 'triple';
+    if (types.length === 5 && unique.size === 5) return 'five_different';
+    return null;
+  }, [selectedCards]);
 
   if (!view || !me) return null;
 
@@ -139,13 +256,14 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
   const nopeCardId = hand.find((c) => c.type === CardType.Nope)?.id;
   const defuseCardId = hand.find((c) => c.type === CardType.Defuse)?.id;
   const favorPrompt = view.prompt?.type === 'favor_give' ? view.prompt : null;
+  const stealPick = view.stealPick;
+  const iAmThief = !!stealPick && stealPick.by === view.youId;
+  const iAmVictim = !!stealPick && stealPick.from === view.youId;
   const playLabel = describePlay(playMode, selectedCards.length);
   // You may Nope unless it's your own action that's currently set to resolve.
   // (You can still "Yup" — play a Nope when the count is odd — to counter a Nope.)
   const canNope =
-    !!view.nope &&
-    !!nopeCardId &&
-    (view.nope.by !== view.youId || view.nope.nopes % 2 === 1);
+    !!view.nope && !!nopeCardId && (view.nope.by !== view.youId || view.nope.nopes % 2 === 1);
 
   return (
     <div className="table">
@@ -182,16 +300,39 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
           )}
         </div>
 
-        <div className="hand">
+        {iAmVictim && (
+          <motion.div
+            className="steal-hint"
+            initial={{ opacity: 0, y: 8 }}
+            animate={{ opacity: 1, y: 0 }}
+          >
+            😼 {nameOf(stealPick!.by)} is blindly stealing a card — drag your cards to shuffle the
+            order and throw them off!
+          </motion.div>
+        )}
+
+        <Reorder.Group
+          as="div"
+          axis="x"
+          className="hand"
+          id="hand-anchor"
+          values={order}
+          onReorder={setOrder}
+          onPointerUp={persistOrderIfChanged}
+        >
           <AnimatePresence>
-            {hand.map((c) => (
-              <motion.div
+            {orderedCards.map((c) => (
+              <Reorder.Item
                 key={c.id}
-                layout
+                value={c.id}
+                as="div"
+                className="hand-item"
                 initial={{ opacity: 0, y: 60, scale: 0.6 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -80, scale: 0.5 }}
                 transition={{ type: 'spring', stiffness: 350, damping: 26 }}
+                whileDrag={{ scale: 1.07, zIndex: 20 }}
+                onDragEnd={persistOrderIfChanged}
               >
                 <Card
                   type={c.type}
@@ -199,10 +340,11 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
                   selected={selected.includes(c.id)}
                   onClick={() => toggle(c.id)}
                 />
-              </motion.div>
+              </Reorder.Item>
             ))}
           </AnimatePresence>
-        </div>
+        </Reorder.Group>
+        <div className="hand-hint muted">↔ Drag your cards to rearrange your hand</div>
       </div>
 
       {/* Floating Nope button during a Nope window. */}
@@ -212,7 +354,13 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
             initial={{ scale: 0, y: 40 }}
             animate={{ scale: 1, y: 0 }}
             exit={{ scale: 0 }}
-            style={{ position: 'fixed', bottom: 24, left: '50%', transform: 'translateX(-50%)', zIndex: 40 }}
+            style={{
+              position: 'fixed',
+              bottom: 24,
+              left: '50%',
+              transform: 'translateX(-50%)',
+              zIndex: 40,
+            }}
           >
             <button
               style={{ fontSize: 22, padding: '14px 26px' }}
@@ -237,6 +385,13 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
           hand={hand}
           toName={view.players.find((p) => p.id === favorPrompt.toPlayerId)?.name ?? 'Someone'}
           onGive={(cardId) => send({ t: 'give_favor_card', cardId })}
+        />
+      )}
+      {iAmThief && (
+        <StealPickModal
+          fromName={nameOf(stealPick!.from)}
+          count={view.players.find((p) => p.id === stealPick!.from)?.handCount ?? 0}
+          onPick={(cardIndex) => send({ t: 'steal_pick', cardIndex })}
         />
       )}
 
@@ -266,6 +421,9 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
         />
       )}
 
+      <PlayedBanner banner={playedBanner} />
+      <StolenToast toast={stolenToast} />
+      <FlyingCards cards={flyingCards} />
       <NopeStamp show={showNope} />
       <ExplosionFlash show={showBoom} />
       <SeeFutureModal cards={seeFuture} onClose={clearSeeFuture} />

@@ -55,6 +55,21 @@ export type AwaitingChoice =
       playerId: string;
       /** Player who will receive it. */
       toPlayerId: string;
+    }
+  | {
+      /**
+       * A resolved pair lets the thief blindly pick one of the target's
+       * (face-down) cards. Faithful to the base game, where you take a *random*
+       * card by choosing one from a fanned, face-down hand. The target may
+       * rearrange their hand while this is pending to throw the thief off.
+       */
+      type: 'steal_pick';
+      /** The thief who must choose a card index. */
+      playerId: string;
+      /** The player being stolen from. */
+      fromPlayerId: string;
+      /** The combo that triggered the steal (currently always 'pair'). */
+      via: ComboKind;
     };
 
 export interface GameState {
@@ -91,7 +106,18 @@ export type GameEvent =
   | { type: 'shuffled' }
   | { type: 'favor_requested'; from: string; to: string }
   | { type: 'card_given'; from: string; to: string }
-  | { type: 'stole'; by: string; from: string; viaCombo: ComboKind }
+  | {
+      type: 'stole';
+      by: string;
+      from: string;
+      viaCombo: ComboKind;
+      /**
+       * The stolen card. Present only on the copies routed to the thief and the
+       * victim — redacted (omitted) for every other recipient so a steal stays
+       * hidden information. See `redactEventForRecipient`.
+       */
+      card?: Card;
+    }
   | { type: 'took_from_discard'; by: string; card: Card }
   | { type: 'exploded'; playerId: string }
   | { type: 'defused'; playerId: string }

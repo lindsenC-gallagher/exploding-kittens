@@ -17,6 +17,8 @@ const COMBO_KINDS: readonly ComboKind[] = ['pair', 'triple', 'five_different'];
 const CARD_TYPES: ReadonlySet<string> = new Set(Object.values(CardType));
 /** A combo is at most 5 cards (five-different); single/pair/triple are fewer. */
 const MAX_CARDS_PER_PLAY = 5;
+/** Generous upper bound on a hand size for a `reorder_hand` permutation. */
+const MAX_HAND_IDS = 64;
 
 function isStr(v: unknown): v is string {
   return typeof v === 'string';
@@ -90,6 +92,15 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case 'give_favor_card':
       if (!isStr(m.cardId)) return null;
       return { t: 'give_favor_card', cardId: m.cardId };
+
+    case 'reorder_hand':
+      // A hand is bounded well below this; the cap just blunts oversized arrays.
+      if (!isStrArray(m.order) || m.order.length === 0 || m.order.length > MAX_HAND_IDS) return null;
+      return { t: 'reorder_hand', order: m.order };
+
+    case 'steal_pick':
+      if (!isIndex(m.cardIndex)) return null;
+      return { t: 'steal_pick', cardIndex: m.cardIndex };
 
     case 'leave':
       return { t: 'leave' };

@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import type { Card as CardModel, ClientGameView } from '@ek/shared';
-import { Card } from './Card.js';
+import { CARD_NAMES, type Card as CardModel, type ClientGameView, type ComboKind } from '@ek/shared';
+import { Card, CardBack } from './Card.js';
 
 /** Big "NOPE!" stamp that slams onto the screen. */
 export function NopeStamp({ show }: { show: boolean }) {
@@ -91,6 +91,144 @@ export function SeeFutureModal({ cards, onClose }: { cards: CardModel[] | null; 
         </motion.div>
       )}
     </AnimatePresence>
+  );
+}
+
+function comboLabel(combo?: ComboKind): string | null {
+  switch (combo) {
+    case 'pair':
+      return 'Pair · blind steal';
+    case 'triple':
+      return 'Triple · demand a card';
+    case 'five_different':
+      return 'Five different · take from discard';
+    default:
+      return null;
+  }
+}
+
+export interface PlayedBannerData {
+  id: number;
+  byName: string;
+  cards: CardModel[];
+  combo?: ComboKind;
+}
+
+/**
+ * Big, transient "X played Y" announcement in the centre of the table so it's
+ * obvious who played what. Auto-dismissed by the parent after a few seconds.
+ * Non-interactive (pointer-events: none) so it never blocks the table beneath.
+ */
+export function PlayedBanner({ banner }: { banner: PlayedBannerData | null }) {
+  return (
+    <AnimatePresence>
+      {banner && (
+        <motion.div
+          key={banner.id}
+          className="played-banner"
+          initial={{ opacity: 0, scale: 0.7, y: -30 }}
+          animate={{ opacity: 1, scale: 1, y: 0 }}
+          exit={{ opacity: 0, scale: 1.1, y: -20 }}
+          transition={{ type: 'spring', stiffness: 320, damping: 24 }}
+        >
+          <div className="played-by">🃏 {banner.byName} played</div>
+          <div className="played-cards">
+            {banner.cards.map((c, i) => (
+              <motion.div
+                key={c.id}
+                initial={{ rotate: -6, y: 50, opacity: 0 }}
+                animate={{ rotate: (i - (banner.cards.length - 1) / 2) * 7, y: 0, opacity: 1 }}
+                transition={{ delay: 0.05 + i * 0.08, type: 'spring', stiffness: 300, damping: 20 }}
+              >
+                <Card type={c.type} />
+              </motion.div>
+            ))}
+          </div>
+          {comboLabel(banner.combo) && <div className="played-combo">{comboLabel(banner.combo)}</div>}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+export interface StolenToastData {
+  id: number;
+  /** True when YOU are the thief; false when you are the victim. */
+  mine: boolean;
+  /** The other party's name (victim if mine, thief otherwise). */
+  otherName: string;
+  card: CardModel;
+}
+
+/**
+ * Toast shown to the two players who know a steal happened: the victim ("X took
+ * your Y") and the thief ("You took X's Y"). Others never see which card moved.
+ */
+export function StolenToast({ toast }: { toast: StolenToastData | null }) {
+  return (
+    <AnimatePresence>
+      {toast && (
+        <motion.div
+          key={toast.id}
+          className="stolen-toast"
+          initial={{ opacity: 0, y: -40, scale: 0.8 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: -30, scale: 0.9 }}
+          transition={{ type: 'spring', stiffness: 300, damping: 22 }}
+        >
+          <div className="stolen-text">
+            {toast.mine ? (
+              <>
+                🦝 You stole <b>{CARD_NAMES[toast.card.type]}</b> from {toast.otherName}!
+              </>
+            ) : (
+              <>
+                😿 {toast.otherName} stole your <b>{CARD_NAMES[toast.card.type]}</b>!
+              </>
+            )}
+          </div>
+          <Card type={toast.card.type} small />
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+export interface FlyingCard {
+  id: number;
+  from: { x: number; y: number };
+  to: { x: number; y: number };
+}
+
+/**
+ * Overlay layer that animates a card-back travelling from the draw pile to a
+ * player (your hand, or an opponent up top) when a card is drawn. Purely
+ * decorative and non-interactive.
+ */
+export function FlyingCards({ cards }: { cards: FlyingCard[] }) {
+  return (
+    <div className="flying-layer">
+      <AnimatePresence>
+        {cards.map((fc) => (
+          <motion.div
+            key={fc.id}
+            className="flying-card"
+            initial={{ x: fc.from.x, y: fc.from.y, scale: 0.55, opacity: 0, rotate: -8 }}
+            animate={{
+              x: fc.to.x,
+              y: fc.to.y,
+              scale: [0.55, 0.8, 0.7],
+              opacity: [0, 1, 1, 0.85],
+              rotate: [-8, 6, 0],
+            }}
+            exit={{ opacity: 0, scale: 0.6 }}
+            transition={{ duration: 0.65, ease: 'easeInOut' }}
+          >
+            <CardBack />
+          </motion.div>
+        ))}
+      </AnimatePresence>
+    </div>
   );
 }
 

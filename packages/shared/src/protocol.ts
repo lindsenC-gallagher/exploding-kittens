@@ -17,6 +17,10 @@ export type ClientMessage =
   | { t: 'draw' }
   | { t: 'defuse'; cardId: string; insertPosition: number }
   | { t: 'give_favor_card'; cardId: string }
+  /** Reorder your own hand (purely your private arrangement; ids must be a permutation). */
+  | { t: 'reorder_hand'; order: string[] }
+  /** Thief blindly picks the `cardIndex`-th of the target's face-down cards. */
+  | { t: 'steal_pick'; cardIndex: number }
   | { t: 'leave' };
 
 // ---- Server -> Client ------------------------------------------------------
@@ -55,6 +59,12 @@ export interface ClientGameView {
     | { type: 'defuse_or_explode' }
     | { type: 'favor_give'; toPlayerId: string }
     | null;
+  /**
+   * Set (for everyone) while a blind pair-steal is in progress: `by` is the
+   * thief choosing a face-down card, `from` is the victim. The victim may
+   * rearrange their hand to thwart the thief while this is set.
+   */
+  stealPick: { by: string; from: string } | null;
   winnerId: string | null;
   version: number;
 }

@@ -5,6 +5,7 @@ import { useGameSocket } from '../hooks/useGameSocket.js';
 import { getName, getPlayerId, normalizeName, setName as persistName } from '../lib/identity.js';
 import { Lobby } from '../components/Lobby.js';
 import { GameTable } from '../components/GameTable.js';
+import { HelpButton } from '../components/Help.js';
 
 export function Room() {
   const { code = '' } = useParams();
@@ -111,6 +112,8 @@ function ConnectedRoom({
           reconnecting…
         </div>
       )}
+
+      <HelpButton playerCount={sock.view.players.length} />
 
       {sock.view.phase === 'lobby' ? (
         <Lobby view={sock.view} send={sock.send} />

@@ -1,9 +1,17 @@
 import { useEffect, useRef, useState } from 'react';
 import { CARD_NAMES, type ClientGameView, type GameEvent } from '@ek/shared';
 import type { GameEventEnvelope } from '../hooks/useGameSocket.js';
+import { CARD_VISUALS } from '../data/cardVisuals.js';
+import type { CardType } from '@ek/shared';
 
 function nameOf(view: ClientGameView, id: string): string {
+  if (id === view.youId) return 'You';
   return view.players.find((p) => p.id === id)?.name ?? 'Someone';
+}
+
+/** "🃏 Skip" — leading emoji + card name, for inline mentions in the log. */
+function cardLabel(type: CardType): string {
+  return `${CARD_VISUALS[type].emoji.slice(0, 2)} ${CARD_NAMES[type]}`;
 }
 
 function describe(view: ClientGameView, e: GameEvent): string | null {
@@ -24,10 +32,20 @@ function describe(view: ClientGameView, e: GameEvent): string | null {
       return `🎁 ${nameOf(view, e.to)} asked ${nameOf(view, e.from)} for a favor`;
     case 'card_given':
       return `📤 ${nameOf(view, e.from)} gave a card to ${nameOf(view, e.to)}`;
-    case 'stole':
-      return `🦝 ${nameOf(view, e.by)} stole from ${nameOf(view, e.from)}`;
+    case 'stole': {
+      // The card is present only for the thief and the victim (redacted server
+      // side for everyone else), so only they ever see *which* card moved.
+      const thief = nameOf(view, e.by);
+      const victim = nameOf(view, e.from);
+      if (e.card) {
+        if (e.by === view.youId) return `🦝 You stole ${cardLabel(e.card.type)} from ${victim}`;
+        if (e.from === view.youId) return `😿 ${thief} stole your ${cardLabel(e.card.type)}`;
+        return `🦝 ${thief} stole ${cardLabel(e.card.type)} from ${victim}`;
+      }
+      return `🦝 ${thief} stole a card from ${victim}`;
+    }
     case 'took_from_discard':
-      return `♻️ ${nameOf(view, e.by)} took ${CARD_NAMES[e.card.type]} from the discard`;
+      return `♻️ ${nameOf(view, e.by)} took ${cardLabel(e.card.type)} from the discard`;
     case 'exploded':
       return `💥 ${nameOf(view, e.playerId)} EXPLODED!`;
     case 'defused':
@@ -59,7 +77,7 @@ export function EventLog({ view, lastEvents }: { view: ClientGameView; lastEvent
       .map((e) => describe(view, e))
       .filter((x): x is string => !!x)
       .map((text) => ({ id: nextId.current++, text }));
-    if (newLines.length) setLines((prev) => [...prev, ...newLines].slice(-50));
+    if (newLines.length) setLines((prev) => [...prev, ...newLines].slice(-200));
   }, [lastEvents, view]);
 
   useEffect(() => {
@@ -67,11 +85,14 @@ export function EventLog({ view, lastEvents }: { view: ClientGameView; lastEvent
   }, [lines]);
 
   return (
-    <div className="log" ref={ref}>
-      {lines.length === 0 && <p>Game log…</p>}
-      {lines.map((l) => (
-        <p key={l.id}>{l.text}</p>
-      ))}
+    <div className="log">
+      <div className="log-title">📜 Game log</div>
+      <div className="log-body" ref={ref}>
+        {lines.length === 0 && <p className="muted">Nothing yet — make a move!</p>}
+        {lines.map((l) => (
+          <p key={l.id}>{l.text}</p>
+        ))}
+      </div>
     </div>
   );
 }

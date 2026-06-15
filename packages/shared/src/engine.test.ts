@@ -4,12 +4,13 @@ import {
   addPlayer,
   applyAction,
   createLobby,
+  reorderHand,
   startGame,
   type GameAction,
 } from './engine.js';
 import type { Card } from './cards.js';
 import type { GameState } from './state.js';
-import { projectView } from './view.js';
+import { projectView, redactEventForRecipient } from './view.js';
 
 /** Build a lobby with `n` named players (p0..pn-1). */
 function lobbyWith(n: number): GameState {
@@ -233,7 +234,7 @@ describe('Favor', () => {
 });
 
 describe('combos', () => {
-  it('a pair steals a random card from the target', () => {
+  it('a pair opens a blind steal-pick, which steals once the thief picks', () => {
     let state = started(3);
     const me = current(state).id;
     const target = state.players.find((p) => p.id !== me)!.id;
@@ -246,9 +247,67 @@ describe('combos', () => {
     const mineBefore = player(state, me).hand.length;
     state = apply(state, { type: 'play', playerId: me, cardIds: [a.cardId, b.cardId], combo: 'pair', target });
     state = apply(state, { type: 'resolve_pending' });
+    // Resolving the pair does NOT steal yet — it opens the blind pick.
+    expect(state.awaiting?.type).toBe('steal_pick');
+    expect(player(state, target).hand.length).toBe(targetBefore);
+
+    state = apply(state, { type: 'steal_pick', playerId: me, cardIndex: 0 });
+    expect(state.awaiting).toBeUndefined();
     expect(player(state, target).hand.length).toBe(targetBefore - 1);
     // me: -2 cat cards + 1 stolen = mineBefore - 1
     expect(player(state, me).hand.length).toBe(mineBefore - 1);
+  });
+
+  it('the thief picks the card at the chosen index (faithful blind pick)', () => {
+    let state = started(2);
+    const me = current(state).id;
+    const target = state.players.find((p) => p.id !== me)!.id;
+    // Give the target a known, fixed hand so we can assert which card is taken.
+    const known: Card[] = [
+      { id: 'k0', type: CardType.Skip },
+      { id: 'k1', type: CardType.Shuffle },
+      { id: 'k2', type: CardType.Favor },
+    ];
+    state = { ...state, players: state.players.map((p) => (p.id === target ? { ...p, hand: known } : p)) };
+    const a = withCardInHand(state, me, CardType.BeardCat);
+    state = a.state;
+    const b = withCardInHand(state, me, CardType.BeardCat);
+    state = b.state;
+
+    state = apply(state, { type: 'play', playerId: me, cardIds: [a.cardId, b.cardId], combo: 'pair', target });
+    state = apply(state, { type: 'resolve_pending' });
+    state = apply(state, { type: 'steal_pick', playerId: me, cardIndex: 1 });
+    // Index 1 was the Shuffle ('k1').
+    expect(player(state, me).hand.some((c) => c.id === 'k1')).toBe(true);
+    expect(player(state, target).hand.some((c) => c.id === 'k1')).toBe(false);
+  });
+
+  it('only the thief may resolve a steal-pick', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const target = state.players.find((p) => p.id !== me)!.id;
+    const a = withCardInHand(state, me, CardType.Tacocat);
+    state = a.state;
+    const b = withCardInHand(state, me, CardType.Tacocat);
+    state = b.state;
+    state = apply(state, { type: 'play', playerId: me, cardIds: [a.cardId, b.cardId], combo: 'pair', target });
+    state = apply(state, { type: 'resolve_pending' });
+    const r = applyAction(state, { type: 'steal_pick', playerId: target, cardIndex: 0 });
+    expect(r.ok).toBe(false);
+  });
+
+  it('a pair against an empty-handed target fizzles with no steal-pick', () => {
+    let state = started(2);
+    const me = current(state).id;
+    const target = state.players.find((p) => p.id !== me)!.id;
+    state = { ...state, players: state.players.map((p) => (p.id === target ? { ...p, hand: [] } : p)) };
+    const a = withCardInHand(state, me, CardType.Tacocat);
+    state = a.state;
+    const b = withCardInHand(state, me, CardType.Tacocat);
+    state = b.state;
+    state = apply(state, { type: 'play', playerId: me, cardIds: [a.cardId, b.cardId], combo: 'pair', target });
+    state = apply(state, { type: 'resolve_pending' });
+    expect(state.awaiting).toBeUndefined();
   });
 
   it('a single cat card cannot be played', () => {
@@ -284,6 +343,37 @@ describe('combos', () => {
     });
     state = apply(state, { type: 'resolve_pending' });
     expect(player(state, me).hand.some((c) => c.id === targetCard.cardId)).toBe(true);
+  });
+});
+
+describe('reorderHand', () => {
+  it('reorders a player to an exact permutation of their hand', () => {
+    const state = started(3);
+    const me = current(state).id;
+    const ids = player(state, me).hand.map((c) => c.id);
+    const reversed = [...ids].reverse();
+    const next = reorderHand(state, me, reversed);
+    expect(next).not.toBeNull();
+    expect(next!.players.find((p) => p.id === me)!.hand.map((c) => c.id)).toEqual(reversed);
+  });
+
+  it('rejects a non-permutation (wrong length, unknown or duplicate id)', () => {
+    const state = started(3);
+    const me = current(state).id;
+    const ids = player(state, me).hand.map((c) => c.id);
+    expect(reorderHand(state, me, ids.slice(1))).toBeNull(); // missing one
+    expect(reorderHand(state, me, [...ids.slice(1), 'bogus'])).toBeNull(); // unknown id
+    expect(reorderHand(state, me, [ids[0], ...ids.slice(0, ids.length - 1)])).toBeNull(); // duplicate
+  });
+
+  it('leaves other players untouched and does not bump version', () => {
+    const state = started(3);
+    const me = current(state).id;
+    const other = state.players.find((p) => p.id !== me)!.id;
+    const otherBefore = player(state, other).hand.map((c) => c.id);
+    const next = reorderHand(state, me, [...player(state, me).hand.map((c) => c.id)].reverse())!;
+    expect(next.players.find((p) => p.id === other)!.hand.map((c) => c.id)).toEqual(otherBefore);
+    expect(next.version).toBe(state.version);
   });
 });
 
@@ -462,5 +552,31 @@ describe('security: hidden-information redaction', () => {
     expect(view.discardTop?.id).not.toBe('ek-secret');
     // The opponent is not shown the defuse prompt (that's only for the drawer).
     expect(view.prompt).toBeNull();
+  });
+
+  it('reveals a stolen card only to the thief and the victim', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const target = state.players.find((p) => p.id !== me)!.id;
+    const other = state.players.find((p) => p.id !== me && p.id !== target)!.id;
+    const a = withCardInHand(state, me, CardType.Tacocat);
+    state = a.state;
+    const b = withCardInHand(state, me, CardType.Tacocat);
+    state = b.state;
+    state = apply(state, { type: 'play', playerId: me, cardIds: [a.cardId, b.cardId], combo: 'pair', target });
+    state = apply(state, { type: 'resolve_pending' });
+    const r = applyAction(state, { type: 'steal_pick', playerId: me, cardIndex: 0 });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const stole = r.events.find((e) => e.type === 'stole');
+    expect(stole && stole.type === 'stole' && stole.card).toBeDefined();
+
+    // Thief and victim keep the card; a bystander has it stripped.
+    const forThief = redactEventForRecipient(stole!, me);
+    const forVictim = redactEventForRecipient(stole!, target);
+    const forOther = redactEventForRecipient(stole!, other);
+    expect(forThief.type === 'stole' && forThief.card).toBeDefined();
+    expect(forVictim.type === 'stole' && forVictim.card).toBeDefined();
+    expect(forOther.type === 'stole' && forOther.card).toBeUndefined();
   });
 });

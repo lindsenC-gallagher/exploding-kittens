@@ -1,5 +1,5 @@
 import { RULES } from './cards.js';
-import type { GameState } from './state.js';
+import type { GameEvent, GameState } from './state.js';
 import type { ClientGameView, PublicPlayer } from './protocol.js';
 
 /**
@@ -27,11 +27,16 @@ export function projectView(
   const current = state.phase === 'playing' ? state.players[state.currentPlayerIndex] : null;
 
   let prompt: ClientGameView['prompt'] = null;
+  let stealPick: ClientGameView['stealPick'] = null;
   if (state.awaiting) {
     if (state.awaiting.type === 'defuse_or_explode' && state.awaiting.playerId === recipientId) {
       prompt = { type: 'defuse_or_explode' };
     } else if (state.awaiting.type === 'favor_give' && state.awaiting.playerId === recipientId) {
       prompt = { type: 'favor_give', toPlayerId: state.awaiting.toPlayerId };
+    } else if (state.awaiting.type === 'steal_pick') {
+      // Public: everyone learns a blind steal is happening (a pair was visibly
+      // played). The thief uses it to render the picker; the victim, to rearrange.
+      stealPick = { by: state.awaiting.playerId, from: state.awaiting.fromPlayerId };
     }
   }
 
@@ -56,9 +61,23 @@ export function projectView(
         }
       : null,
     prompt,
+    stealPick,
     winnerId: state.winnerId ?? null,
     version: state.version,
   };
+}
+
+/**
+ * Redact a single event for one recipient. Mirrors {@link projectView}: hidden
+ * information must be stripped per-recipient and single-sourced so it can't
+ * drift. Currently this hides which card a steal moved from everyone except the
+ * thief and the victim (both of whom legitimately know it).
+ */
+export function redactEventForRecipient(event: GameEvent, recipientId: string): GameEvent {
+  if (event.type === 'stole' && event.card && recipientId !== event.by && recipientId !== event.from) {
+    return { type: 'stole', by: event.by, from: event.from, viaCombo: event.viaCombo };
+  }
+  return event;
 }
 
 export { RULES };

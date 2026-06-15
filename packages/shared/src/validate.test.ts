@@ -21,6 +21,14 @@ describe('parseClientMessage — well-formed messages', () => {
       cardId: 'c3',
       insertPosition: 0,
     });
+    expect(parseClientMessage(j({ t: 'reorder_hand', order: ['c1', 'c2'] }))).toEqual({
+      t: 'reorder_hand',
+      order: ['c1', 'c2'],
+    });
+    expect(parseClientMessage(j({ t: 'steal_pick', cardIndex: 2 }))).toEqual({
+      t: 'steal_pick',
+      cardIndex: 2,
+    });
   });
 
   it('accepts a full combo play with optional fields', () => {
@@ -85,6 +93,16 @@ describe('parseClientMessage — malformed input is rejected (DoS hardening)', (
     expect(parseClientMessage(j({ t: 'nope', cardId: 5 }))).toBeNull();
     expect(parseClientMessage(j({ t: 'give_favor_card' }))).toBeNull();
     expect(parseClientMessage(j({ t: 'set_ready', ready: 'yes' }))).toBeNull();
+  });
+
+  it('rejects reorder_hand / steal_pick with wrong field types', () => {
+    expect(parseClientMessage(j({ t: 'reorder_hand' }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'reorder_hand', order: [] }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'reorder_hand', order: [1, 2] }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'reorder_hand', order: 'c1' }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'steal_pick' }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'steal_pick', cardIndex: -1 }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'steal_pick', cardIndex: 1.5 }))).toBeNull();
   });
 
   it('rejects oversized frames', () => {

@@ -38,10 +38,26 @@ export function CardFace({ card, ...rest }: { card: CardModel } & Omit<CardProps
   return <Card type={card.type} {...rest} />;
 }
 
-export function CardBack({ count }: { count?: number }) {
+export function CardBack({
+  count,
+  label,
+  selectable,
+  onClick,
+}: {
+  count?: number;
+  /** Optional caption under the paw (e.g. a pick number for the steal picker). */
+  label?: string;
+  selectable?: boolean;
+  onClick?: () => void;
+}) {
   return (
-    <div className="card back">
+    <div
+      className={`card back ${selectable ? 'selectable' : ''}`}
+      onClick={onClick}
+      role={onClick ? 'button' : undefined}
+    >
       <span className="paw">🐾</span>
+      {label !== undefined && <span className="name">{label}</span>}
       {count !== undefined && <span className="name">{count} left</span>}
     </div>
   );

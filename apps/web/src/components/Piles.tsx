@@ -37,6 +37,7 @@ export function Piles({ view, canDraw, onDraw }: PilesProps) {
       <div className="pile">
         <span className="muted">Draw pile</span>
         <motion.div
+          id="draw-anchor"
           whileHover={canDraw ? { y: -10, scale: 1.05 } : undefined}
           whileTap={canDraw ? { scale: 0.96 } : undefined}
           style={{ cursor: canDraw ? 'pointer' : 'default' }}
