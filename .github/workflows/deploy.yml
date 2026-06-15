@@ -44,6 +44,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Unit tests (rules engine)
         run: pnpm --filter @ek/shared test
+      - name: Worker tests (Durable Object)
+        run: pnpm --filter @ek/worker test
       - name: Typecheck
         run: pnpm -r typecheck
 
