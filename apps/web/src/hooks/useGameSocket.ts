@@ -29,6 +29,8 @@ export function useGameSocket(code: string, pid: string, name: string): UseGameS
   const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const eventSeq = useRef(0);
+  const pendingEvents = useRef<GameEvent[]>([]);
+  const flushScheduled = useRef(false);
   const reconnectRef = useRef<ReturnType<typeof setTimeout>>();
   const errorTimerRef = useRef<ReturnType<typeof setTimeout>>();
   const closedByUs = useRef(false);
@@ -61,8 +63,24 @@ export function useGameSocket(code: string, pid: string, name: string): UseGameS
           setView(msg.view);
           break;
         case 'events':
-          eventSeq.current += 1;
-          setLastEvents({ id: eventSeq.current, events: msg.events });
+          // Buffer events and flush on a microtask so batches that arrive
+          // back-to-back (e.g. a play's `cards_played` immediately followed by
+          // its auto-resolution's `action_resolved`/`turn_changed`) coalesce
+          // into one envelope instead of the second `setLastEvents` overwriting
+          // the first before consumers drain it. Lossless regardless of how the
+          // browser/React batch the two socket messages.
+          pendingEvents.current.push(...msg.events);
+          if (!flushScheduled.current) {
+            flushScheduled.current = true;
+            queueMicrotask(() => {
+              flushScheduled.current = false;
+              const batch = pendingEvents.current;
+              pendingEvents.current = [];
+              if (batch.length === 0) return;
+              eventSeq.current += 1;
+              setLastEvents({ id: eventSeq.current, events: batch });
+            });
+          }
           break;
         case 'see_future':
           setSeeFuture(msg.cards);

@@ -3,6 +3,7 @@ import { CardType, BASE_DECK_COMPOSITION, RULES } from './cards.js';
 import {
   addPlayer,
   applyAction,
+  canRespondToPending,
   createLobby,
   reorderHand,
   startGame,
@@ -516,6 +517,145 @@ describe('regression: bug fixes', () => {
       if (c.ok) expect(a.state.drawPile.map((x) => x.id)).toEqual(c.state.drawPile.map((x) => x.id));
       expect(a.state.drawPile.map((x) => x.id)).not.toEqual(b.state.drawPile.map((x) => x.id));
     }
+  });
+});
+
+describe('canRespondToPending (Nope window stays open for a Yup)', () => {
+  function withPendingSkip(n = 3) {
+    let state = started(n);
+    const me = current(state).id;
+    const skip = withCardInHand(state, me, CardType.Skip);
+    state = skip.state;
+    state = apply(state, { type: 'play', playerId: me, cardIds: [skip.cardId] });
+    return { state, me };
+  }
+
+  /** Remove every Nope from every hand so each test controls who holds one. */
+  function stripNopes(state: GameState): GameState {
+    return {
+      ...state,
+      players: state.players.map((p) => ({ ...p, hand: p.hand.filter((c) => c.type !== CardType.Nope) })),
+    };
+  }
+
+  it('returns false when nothing is pending', () => {
+    expect(canRespondToPending(started(3))).toBe(false);
+  });
+
+  it('is true while an opponent holds a Nope', () => {
+    let { state, me } = withPendingSkip(3);
+    const other = state.players.find((p) => p.id !== me)!.id;
+    const nope = withCardInHand(stripNopes(state), other, CardType.Nope);
+    expect(canRespondToPending(nope.state)).toBe(true);
+  });
+
+  it('is false when only the actor holds a Nope and the action is NOT cancelled (even count)', () => {
+    let { state, me } = withPendingSkip(3);
+    const mine = withCardInHand(stripNopes(state), me, CardType.Nope);
+    expect(mine.state.pending!.nopes).toBe(0);
+    // You cannot Nope your own uncancelled action, and nobody else holds one.
+    expect(canRespondToPending(mine.state)).toBe(false);
+  });
+
+  it('is true when the actor holds a Nope and the action IS cancelled (odd count) — they may Yup', () => {
+    let { state, me } = withPendingSkip(3);
+    const other = state.players.find((p) => p.id !== me)!.id;
+    state = stripNopes(state);
+    const opp = withCardInHand(state, other, CardType.Nope);
+    state = opp.state;
+    const mine = withCardInHand(state, me, CardType.Nope);
+    state = mine.state;
+    // Opponent casts their only Nope → odd count; now ONLY the actor holds one.
+    state = apply(state, { type: 'nope', playerId: other, cardId: opp.cardId });
+    expect(state.pending!.nopes).toBe(1);
+    expect(player(state, other).hand.some((c) => c.type === CardType.Nope)).toBe(false);
+    // Regression: the actor must still be allowed to respond (a "Yup").
+    expect(canRespondToPending(state)).toBe(true);
+  });
+
+  it('ignores disconnected or eliminated Nope holders', () => {
+    let { state, me } = withPendingSkip(3);
+    const other = state.players.find((p) => p.id !== me)!.id;
+    const base = withCardInHand(stripNopes(state), other, CardType.Nope).state;
+    expect(canRespondToPending(base)).toBe(true);
+    const disconnected = { ...base, players: base.players.map((p) => (p.id === other ? { ...p, connected: false } : p)) };
+    expect(canRespondToPending(disconnected)).toBe(false);
+    const dead = { ...base, players: base.players.map((p) => (p.id === other ? { ...p, alive: false } : p)) };
+    expect(canRespondToPending(dead)).toBe(false);
+  });
+});
+
+describe('combo fidelity guards', () => {
+  const FIVE_DIFFERENT = [
+    CardType.Skip,
+    CardType.Attack,
+    CardType.Favor,
+    CardType.Shuffle,
+    CardType.SeeTheFuture,
+  ];
+
+  /** Give the current player five distinct non-cat cards for a five-different play. */
+  function withFiveDifferent(state: GameState, me: string): { state: GameState; ids: string[] } {
+    const ids: string[] = [];
+    for (const t of FIVE_DIFFERENT) {
+      const inj = withCardInHand(state, me, t);
+      state = inj.state;
+      ids.push(inj.cardId);
+    }
+    return { state, ids };
+  }
+
+  it('rejects a five-different that tries to take an Exploding Kitten from the discard', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const ek: Card = { id: 'disc-ek', type: CardType.ExplodingKitten };
+    state = { ...state, discardPile: [...state.discardPile, ek] };
+    const five = withFiveDifferent(state, me);
+    const r = applyAction(five.state, {
+      type: 'play',
+      playerId: me,
+      cardIds: five.ids,
+      combo: 'five_different',
+      discardCardId: 'disc-ek',
+    });
+    expect(r.ok).toBe(false);
+  });
+
+  it('still allows taking a normal card (e.g. a Defuse) from the discard via five-different', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const def: Card = { id: 'disc-def', type: CardType.Defuse };
+    state = { ...state, discardPile: [...state.discardPile, def] };
+    const five = withFiveDifferent(state, me);
+    const r = applyAction(five.state, {
+      type: 'play',
+      playerId: me,
+      cardIds: five.ids,
+      combo: 'five_different',
+      discardCardId: 'disc-def',
+    });
+    expect(r.ok).toBe(true);
+  });
+
+  it('rejects a triple that names the Exploding Kitten', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const target = state.players.find((p) => p.id !== me)!.id;
+    const c1 = withCardInHand(state, me, CardType.BeardCat);
+    state = c1.state;
+    const c2 = withCardInHand(state, me, CardType.BeardCat);
+    state = c2.state;
+    const c3 = withCardInHand(state, me, CardType.BeardCat);
+    state = c3.state;
+    const r = applyAction(state, {
+      type: 'play',
+      playerId: me,
+      cardIds: [c1.cardId, c2.cardId, c3.cardId],
+      combo: 'triple',
+      target,
+      namedCard: CardType.ExplodingKitten,
+    });
+    expect(r.ok).toBe(false);
   });
 });
 

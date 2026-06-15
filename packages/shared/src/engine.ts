@@ -189,6 +189,30 @@ function checkGameOver(state: GameState, events: GameEvent[]): void {
   }
 }
 
+/**
+ * Whether any player may still play a Nope against the current pending action.
+ * The Nope window must stay open while this is true. Crucially this INCLUDES the
+ * actor themselves when their action is currently set to be cancelled (an odd
+ * number of Nopes stacked): they are allowed to play a Nope as a "Yup" to
+ * re-enable it (see {@link handleNope}). Returns false when nothing is pending.
+ *
+ * The server uses this to decide when to resolve a Nope window immediately
+ * instead of arming a timer — so it must not exclude a player who still has a
+ * legal response, or that response is silently denied.
+ */
+export function canRespondToPending(state: GameState): boolean {
+  const pending = state.pending;
+  if (!pending) return false;
+  return state.players.some((p) => {
+    if (!p.alive || !p.connected) return false;
+    if (!p.hand.some((c) => c.type === CardType.Nope)) return false;
+    // The actor can only respond when their own action is currently cancelled
+    // (odd count) — i.e. play a Nope as a "Yup"; never on an uncancelled action.
+    if (p.id === pending.by) return pending.nopes % 2 === 1;
+    return true;
+  });
+}
+
 // ---------------------------------------------------------------------------
 // applyAction
 // ---------------------------------------------------------------------------
@@ -289,12 +313,22 @@ function handlePlay(
     if (!action.target) return { ok: false, error: 'Choose a target player' };
     const target = state.players.find((p) => p.id === action.target);
     if (!target || !target.alive || target.id === player.id) return { ok: false, error: 'Invalid target' };
-    if (combo === 'triple' && !action.namedCard) return { ok: false, error: 'Name a card for the triple' };
+    if (combo === 'triple') {
+      if (!action.namedCard) return { ok: false, error: 'Name a card for the triple' };
+      // You can't demand the Exploding Kitten — it's never a held, surrenderable card.
+      if (action.namedCard === CardType.ExplodingKitten) {
+        return { ok: false, error: 'You cannot name the Exploding Kitten' };
+      }
+    }
   }
   if (combo === 'five_different') {
     if (!action.discardCardId) return { ok: false, error: 'Pick a card from the discard pile' };
-    if (!state.discardPile.some((c) => c.id === action.discardCardId)) {
-      return { ok: false, error: 'That card is not in the discard pile' };
+    const chosen = state.discardPile.find((c) => c.id === action.discardCardId);
+    if (!chosen) return { ok: false, error: 'That card is not in the discard pile' };
+    // An exploded player's Exploding Kitten lands in the discard; it must not be
+    // fishable back into a live hand via the five-different combo.
+    if (chosen.type === CardType.ExplodingKitten) {
+      return { ok: false, error: 'You cannot take an Exploding Kitten from the discard pile' };
     }
   }
   if (kind === CardType.Favor) {

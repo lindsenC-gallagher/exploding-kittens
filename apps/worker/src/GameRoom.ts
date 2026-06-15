@@ -1,6 +1,7 @@
 import {
   addPlayer,
   applyAction,
+  canRespondToPending,
   createLobby,
   parseClientMessage,
   projectView,
@@ -198,6 +199,12 @@ export class GameRoom {
       // In the lobby, drop the player entirely and reassign host if needed.
       this.game.players = this.game.players.filter((p) => p.id !== pid);
       if (this.game.hostId === pid) this.game.hostId = this.game.players[0]?.id ?? '';
+      // Release the seat token too; otherwise lobby join/leave churn grows the
+      // persisted token map without bound (a fresh pid needs no token to join).
+      if (this.tokens[pid]) {
+        delete this.tokens[pid];
+        await this.ctx.storage.put('tokens', this.tokens);
+      }
     }
     await this.persist();
     await this.settle();
@@ -342,11 +349,10 @@ export class GameRoom {
    */
   private async settle(): Promise<void> {
     if (this.game.pending) {
-      const actorId = this.game.pending.by;
-      const someoneCanNope = this.game.players.some(
-        (p) => p.alive && p.id !== actorId && p.connected && p.hand.some((c) => c.type === CardType.Nope),
-      );
-      if (!someoneCanNope) {
+      // Keep the Nope window open while anyone may still respond — including the
+      // actor, who may play a Nope as a "Yup" when their action is currently
+      // cancelled (an odd Nope count). Resolve immediately only when nobody can.
+      if (!canRespondToPending(this.game)) {
         await this.resolvePendingNow();
         return;
       }
