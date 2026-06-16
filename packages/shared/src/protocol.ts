@@ -11,6 +11,8 @@ import type { ComboKind, GameEvent, GameOptions, GamePhase } from './state.js';
 export type ClientMessage =
   | { t: 'join'; name: string }
   | { t: 'set_ready'; ready: boolean }
+  /** Choose your avatar (one of the shared AVATARS); cosmetic, allowed any time. */
+  | { t: 'set_avatar'; avatar: string }
   /** Host-only, lobby-only: toggle one or more house rules. */
   | { t: 'set_options'; options: Partial<GameOptions> }
   | { t: 'start_game' }
@@ -31,6 +33,8 @@ export type ClientMessage =
 export interface PublicPlayer {
   id: string;
   name: string;
+  /** Chosen avatar emoji (one of the shared AVATARS). */
+  avatar: string;
   handCount: number;
   alive: boolean;
   connected: boolean;
@@ -56,8 +60,18 @@ export interface ClientGameView {
   discardTop: Card | null;
   /** Full discard pile (needed for the five-different combo picker). */
   discardPile: Card[];
-  /** Set when an action is in its Nope window. */
-  nope: { by: string; kind: ComboKind | CardType; nopes: number; deadline: number } | null;
+  /**
+   * Set when an action is in its Nope window. `target` (when present) is the
+   * player the pending action is aimed at, so opponents can decide whether to
+   * Nope an action now that they can see who it hits.
+   */
+  nope: {
+    by: string;
+    kind: ComboKind | CardType;
+    nopes: number;
+    deadline: number;
+    target?: string;
+  } | null;
   /** Set when the game is waiting on YOU for a forced choice. */
   prompt:
     | { type: 'defuse_or_explode' }
@@ -68,7 +82,16 @@ export interface ClientGameView {
    * thief choosing a face-down card, `from` is the victim. The victim may
    * rearrange their hand to thwart the thief while this is set.
    */
-  stealPick: { by: string; from: string } | null;
+  stealPick: {
+    by: string;
+    from: string;
+    /**
+     * Epoch ms before which the thief may NOT pick yet — the victim's grace
+     * window to rearrange their (face-down) hand. The thief's picker stays
+     * disabled until now; the victim can only reorder until then.
+     */
+    pickableAt: number;
+  } | null;
   winnerId: string | null;
   version: number;
 }

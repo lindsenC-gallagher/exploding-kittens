@@ -1,3 +1,4 @@
+import { isAvatar } from './avatars.js';
 import { CardType } from './cards.js';
 import type { ClientMessage } from './protocol.js';
 import type { ComboKind, GameOptions } from './state.js';
@@ -58,6 +59,10 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case 'set_ready':
       if (typeof m.ready !== 'boolean') return null;
       return { t: 'set_ready', ready: m.ready };
+
+    case 'set_avatar':
+      if (!isAvatar(m.avatar)) return null;
+      return { t: 'set_avatar', avatar: m.avatar };
 
     case 'set_options': {
       if (typeof m.options !== 'object' || m.options === null) return null;

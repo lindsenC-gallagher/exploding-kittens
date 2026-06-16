@@ -4,8 +4,11 @@ import { CardType, type CardType as CT, type ClientMessage } from '@ek/shared';
 import type { UseGameSocket } from '../hooks/useGameSocket.js';
 import { Card } from './Card.js';
 import { Opponents } from './Opponents.js';
+import { TurnOrder } from './TurnOrder.js';
 import { Piles } from './Piles.js';
 import { EventLog } from './EventLog.js';
+import { MuteButton } from './MuteButton.js';
+import { playSound } from '../lib/sound.js';
 import {
   DrawReveal,
   ExplosionFlash,
@@ -48,6 +51,9 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
   const [showNope, setShowNope] = useState(false);
   const [showBoom, setShowBoom] = useState(false);
   const [nopeLeft, setNopeLeft] = useState(0);
+  // A coarse clock that ticks only while a blind steal's grace window is open,
+  // so the thief's picker and the victim's "rearrange" countdown stay live.
+  const [now, setNow] = useState(() => Date.now());
   const seenEvents = useRef(0);
 
   const me = view!.players.find((p) => p.id === view!.youId);
@@ -88,6 +94,14 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
   );
 
   function persistOrderIfChanged() {
+    // Once a blind steal's grace window has closed, the victim's hand is locked;
+    // snap any local drag back to the server order rather than sending a reorder
+    // the server will reject anyway.
+    const sp = view?.stealPick;
+    if (sp && sp.from === view?.youId && Date.now() >= sp.pickableAt) {
+      setOrder(hand.map((c) => c.id));
+      return;
+    }
     const cur = order;
     const prev = lastSentOrder.current;
     const same = cur.length === prev.length && cur.every((id, i) => id === prev[i]);
@@ -104,6 +118,10 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
   // on (kept hidden until the reveal completes so the card doesn't "flash" in).
   const [drawReveal, setDrawReveal] = useState<DrawRevealData | null>(null);
   const [drawingCardId, setDrawingCardId] = useState<string | null>(null);
+  // Guards against a duplicated reveal for the same drawn card (e.g. an effect
+  // re-running under React StrictMode in dev), which would otherwise show the
+  // card flying in twice.
+  const lastRevealRef = useRef<{ id: string; t: number }>({ id: '', t: 0 });
   const overlaySeq = useRef(0);
   const bannerTimer = useRef<ReturnType<typeof setTimeout>>();
   const toastTimer = useRef<ReturnType<typeof setTimeout>>();
@@ -147,6 +165,10 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
   // measured from the live DOM (the card is the same size as the pile), so it
   // lands precisely; we poll a few frames in case the hand hasn't rendered yet.
   function revealDraw(card: { id: string; type: CardType }) {
+    // De-dupe: ignore a second reveal of the same card within a short window.
+    const now = Date.now();
+    if (lastRevealRef.current.id === card.id && now - lastRevealRef.current.t < 1500) return;
+    lastRevealRef.current = { id: card.id, t: now };
     const src = anchorRect('draw-anchor');
     if (!src) return;
     setDrawingCardId(card.id);
@@ -181,21 +203,35 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
     for (const e of lastEvents.events) {
       if (e.type === 'nope') {
         setShowNope(true);
+        playSound('nope');
         setTimeout(() => setShowNope(false), 1100);
       } else if (e.type === 'exploded') {
         setShowBoom(true);
+        playSound('explode');
         setTimeout(() => setShowBoom(false), 1300);
       } else if (e.type === 'cards_played') {
         setPlayedBanner({
           id: overlaySeq.current++,
           byName: nameOf(e.by),
+          targetName: e.target ? nameOf(e.target) : undefined,
           cards: e.cards,
           combo: e.combo,
           pos: bannerPosFor(e.by),
         });
+        playSound('play');
         clearTimeout(bannerTimer.current);
         bannerTimer.current = setTimeout(() => setPlayedBanner(null), 2800);
+      } else if (e.type === 'shuffled') {
+        playSound('shuffle');
+      } else if (e.type === 'defused') {
+        playSound('defuse');
+      } else if (e.type === 'game_over') {
+        playSound('win');
+      } else if (e.type === 'turn_changed') {
+        // A gentle chime only when it becomes *your* turn, so it isn't spammy.
+        if (e.playerId === view!.youId) playSound('turn');
       } else if (e.type === 'card_drawn') {
+        playSound('draw');
         if (e.by === view!.youId && e.card) {
           // Your own draw: reveal the real card face up, flying into your hand.
           revealDraw(e.card);
@@ -208,6 +244,7 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
         // so every player sees the hand-off (face down — the card stays hidden).
         flyCard(anchorRect(playerAnchorId(e.from)), anchorRect(playerAnchorId(e.to)));
       } else if (e.type === 'stole' && e.card) {
+        playSound('steal');
         // Only the thief and victim receive the card (others get it redacted).
         const mine = e.by === view!.youId;
         setStolenToast({
@@ -232,6 +269,12 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
     [],
   );
 
+  // The See-the-Future reveal arrives as its own message (private to the viewer),
+  // so chime when that modal opens rather than from the public event stream.
+  useEffect(() => {
+    if (seeFuture) playSound('future');
+  }, [seeFuture]);
+
   // Clear any in-progress selection/flow whenever you can no longer act
   // (turn passed, a prompt opened, or a Nope window started).
   useEffect(() => {
@@ -254,6 +297,16 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
     const h = setInterval(tick, 100);
     return () => clearInterval(h);
   }, [nopeDeadline]);
+
+  // While a blind steal is open, keep a live clock so the victim's "rearrange"
+  // countdown and the thief's locked picker update without a server round-trip.
+  const stealPickableAt = view?.stealPick?.pickableAt ?? null;
+  useEffect(() => {
+    if (stealPickableAt === null) return;
+    setNow(Date.now());
+    const h = setInterval(() => setNow(Date.now()), 200);
+    return () => clearInterval(h);
+  }, [stealPickableAt]);
 
   // Analyse the current hand selection into a play mode.
   const selectedCards = useMemo(() => hand.filter((c) => selected.includes(c.id)), [hand, selected]);
@@ -322,6 +375,10 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
   const stealPick = view.stealPick;
   const iAmThief = !!stealPick && stealPick.by === view.youId;
   const iAmVictim = !!stealPick && stealPick.from === view.youId;
+  // The victim's grace window: they may rearrange until `pickableAt`; after that
+  // their hand is locked in and the thief is free to pick.
+  const stealShuffleLeft = stealPick ? Math.max(0, stealPick.pickableAt - now) : 0;
+  const victimLocked = iAmVictim && stealShuffleLeft <= 0;
   const playLabel = describePlay(playMode, selectedCards.length);
   // You may Nope unless it's your own action that's currently set to resolve.
   // (You can still "Yup" — play a Nope when the count is odd — to counter a Nope.)
@@ -330,6 +387,8 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
 
   return (
     <div className="table">
+      <MuteButton />
+      <TurnOrder view={view} />
       <Opponents view={view} />
 
       <div className="stack" style={{ justifyContent: 'center' }}>
@@ -369,67 +428,93 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
             initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
           >
-            😼 {nameOf(stealPick!.by)} is blindly stealing a card — drag your cards to shuffle the
-            order and throw them off!
+            {victimLocked ? (
+              <>🔒 {nameOf(stealPick!.by)} is now picking — your hand is locked in!</>
+            ) : (
+              <>
+                😼 {nameOf(stealPick!.by)} is about to blind-steal — rearrange your cards now!{' '}
+                <b>{Math.ceil(stealShuffleLeft / 1000)}s</b> until your hand locks.
+              </>
+            )}
           </motion.div>
         )}
 
         <Reorder.Group
           as="div"
           axis="x"
-          className="hand"
+          className={`hand fan ${victimLocked ? 'locked' : ''}`}
           id="hand-anchor"
           values={order}
-          onReorder={setOrder}
+          onReorder={victimLocked ? () => {} : setOrder}
           onPointerUp={persistOrderIfChanged}
         >
           <AnimatePresence>
-            {orderedCards.map((c) => (
-              <Reorder.Item
-                key={c.id}
-                value={c.id}
-                as="div"
-                className="hand-item"
-                data-card-id={c.id}
-                initial={{ opacity: 0, y: 60, scale: 0.6 }}
-                // While its face-up draw reveal is in flight, the slot stays
-                // invisible (but holds layout, so the reveal lands on it); once
-                // the reveal clears, the card springs into view.
-                animate={
-                  drawingCardId === c.id
-                    ? { opacity: 0, y: 0, scale: 1 }
-                    : { opacity: 1, y: 0, scale: 1 }
-                }
-                exit={{ opacity: 0, y: -80, scale: 0.5 }}
-                transition={{ type: 'spring', stiffness: 350, damping: 26 }}
-                whileDrag={{ scale: 1.07, zIndex: 20 }}
-                onDragEnd={persistOrderIfChanged}
-              >
-                <Card
-                  type={c.type}
-                  selectable={canAct}
-                  selected={selected.includes(c.id)}
-                  onClick={() => toggle(c.id)}
-                />
-              </Reorder.Item>
-            ))}
+            {orderedCards.map((c, i) => {
+              const fan = fanTransform(i, orderedCards.length);
+              return (
+                <Reorder.Item
+                  key={c.id}
+                  value={c.id}
+                  as="div"
+                  className="hand-item"
+                  data-card-id={c.id}
+                  // Disable drag only while the victim's hand is locked. Passing
+                  // `drag` at all (even undefined) overrides Reorder.Item's
+                  // internal axis drag, so omit it entirely otherwise.
+                  {...(victimLocked ? { drag: false as const } : {})}
+                  // Selected cards sit above their neighbours so the lift reads
+                  // clearly; hovering raises a card so overlapped cards in the
+                  // fan are always clickable.
+                  style={{ zIndex: selected.includes(c.id) ? 30 : i }}
+                  whileHover={{ zIndex: 31 }}
+                  initial={{ opacity: 0, y: 60, scale: 0.6 }}
+                  // While its face-up draw reveal is in flight, the slot stays
+                  // invisible (but holds layout, so the reveal lands on it); once
+                  // the reveal clears, the card springs into view.
+                  animate={
+                    drawingCardId === c.id
+                      ? { opacity: 0, y: 0, scale: 1 }
+                      : { opacity: 1, y: 0, scale: 1 }
+                  }
+                  exit={{ opacity: 0, y: -80, scale: 0.5 }}
+                  transition={{ type: 'spring', stiffness: 350, damping: 26 }}
+                  whileDrag={{ scale: 1.07, zIndex: 40 }}
+                  onDragEnd={persistOrderIfChanged}
+                >
+                  {/* Static fan tilt lives on this wrapper so it composes with
+                      framer's drag/reorder transforms on the item above. */}
+                  <div
+                    className="fan-card"
+                    style={{ transform: `translateY(${fan.y}px) rotate(${fan.rot}deg)` }}
+                  >
+                    <Card
+                      type={c.type}
+                      selectable={canAct}
+                      selected={selected.includes(c.id)}
+                      onClick={() => toggle(c.id)}
+                    />
+                  </div>
+                </Reorder.Item>
+              );
+            })}
           </AnimatePresence>
         </Reorder.Group>
-        <div className="hand-hint muted">↔ Drag your cards to rearrange your hand</div>
+        <div className="hand-hint muted">🤚 Held like a fan · drag to rearrange your hand</div>
       </div>
 
       {/* Floating Nope button during a Nope window. */}
       <AnimatePresence>
         {canNope && (
           <motion.div
-            initial={{ scale: 0, y: 40 }}
-            animate={{ scale: 1, y: 0 }}
-            exit={{ scale: 0 }}
+            // x:'-50%' centers via framer's transform so it survives the scale
+            // animation (a CSS translateX would be clobbered).
+            initial={{ scale: 0, y: 40, x: '-50%' }}
+            animate={{ scale: 1, y: 0, x: '-50%' }}
+            exit={{ scale: 0, x: '-50%' }}
             style={{
               position: 'fixed',
               bottom: 24,
               left: '50%',
-              transform: 'translateX(-50%)',
               zIndex: 40,
             }}
           >
@@ -462,6 +547,7 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
         <StealPickModal
           fromName={nameOf(stealPick!.from)}
           count={view.players.find((p) => p.id === stealPick!.from)?.handCount ?? 0}
+          msUntilPickable={stealShuffleLeft}
           onPick={(cardIndex) => send({ t: 'steal_pick', cardIndex })}
         />
       )}
@@ -503,6 +589,22 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
       <EventLog view={view} lastEvents={lastEvents} />
     </div>
   );
+}
+
+/**
+ * Fan tilt + vertical drop for the i-th of n hand cards, so the hand arcs like
+ * cards held in a hand: the middle card sits highest and upright, the edges
+ * rotate outward and dip down. Returns degrees and px offsets for a wrapper
+ * transform (kept off the draggable item so it composes with framer's drag).
+ */
+function fanTransform(i: number, n: number): { rot: number; y: number } {
+  if (n <= 1) return { rot: 0, y: 0 };
+  const mid = (n - 1) / 2;
+  const rel = i - mid;
+  const perCard = Math.min(7, 46 / n); // tighter fan as the hand grows
+  const rot = rel * perCard;
+  const y = Math.pow(Math.abs(rel), 1.3) * 7;
+  return { rot, y };
 }
 
 function isCat(t: CT): boolean {

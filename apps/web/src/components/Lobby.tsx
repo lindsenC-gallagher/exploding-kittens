@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { RULES, type ClientGameView, type ClientMessage } from '@ek/shared';
+import { AVATARS, RULES, type ClientGameView, type ClientMessage } from '@ek/shared';
 
 interface LobbyProps {
   view: ClientGameView;
@@ -58,8 +58,9 @@ export function Lobby({ view, send }: LobbyProps) {
                 layout
               >
                 <span style={{ fontWeight: 800 }}>
-                  {p.id === view.youId ? '🫵 ' : '🐱 '}
+                  <span style={{ fontSize: 20, marginRight: 6 }}>{p.avatar}</span>
                   {p.name}
+                  {p.id === view.youId ? ' (you)' : ''}
                 </span>
                 <span className="row" style={{ gap: 6 }}>
                   {p.isHost && <span className="badge host">HOST</span>}
@@ -77,6 +78,25 @@ export function Lobby({ view, send }: LobbyProps) {
         <p className="muted" style={{ textAlign: 'center' }}>
           {view.players.length}/{RULES.maxPlayers} players · need {RULES.minPlayers}+ to start
         </p>
+
+        <div className="avatar-panel">
+          <div className="muted" style={{ fontWeight: 800, marginBottom: 8 }}>
+            🎭 Choose your avatar
+          </div>
+          <div className="avatar-grid">
+            {AVATARS.map((a) => (
+              <button
+                key={a}
+                type="button"
+                className={`avatar-pick ${me?.avatar === a ? 'on' : ''}`}
+                aria-pressed={me?.avatar === a}
+                onClick={() => send({ t: 'set_avatar', avatar: a })}
+              >
+                {a}
+              </button>
+            ))}
+          </div>
+        </div>
 
         <div className="rules-panel">
           <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>

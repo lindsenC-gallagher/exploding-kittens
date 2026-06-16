@@ -3,6 +3,7 @@ import {
   applyAction,
   canRespondToPending,
   createLobby,
+  isAvatar,
   parseClientMessage,
   projectView,
   redactEventForRecipient,
@@ -63,6 +64,11 @@ export class GameRoom {
   private loaded = false;
   /** Current Nope-window deadline (epoch ms) for the client countdown, or null. */
   private nopeDeadline: number | null = null;
+  /**
+   * Epoch ms before which the thief may not pick during a blind steal — the
+   * victim's grace window to rearrange. Null when no steal is in progress.
+   */
+  private stealPickableAt: number | null = null;
   /** Per-socket fixed-window message counters for rate limiting. */
   private msgWindows = new WeakMap<WebSocket, { count: number; start: number }>();
 
@@ -77,6 +83,7 @@ export class GameRoom {
     this.tokens = (await this.ctx.storage.get<Record<string, string>>('tokens')) ?? {};
     const kind = await this.ctx.storage.get<TimerKind>('timerKind');
     this.nopeDeadline = kind === 'nope' ? ((await this.ctx.storage.get<number>('timerDeadline')) ?? null) : null;
+    this.stealPickableAt = (await this.ctx.storage.get<number>('stealPickableAt')) ?? null;
     this.loaded = true;
     // Re-arm a timer if a timed state survived hibernation without a live alarm.
     if (this.game.pending || this.game.awaiting || this.disconnectedCurrentPlayer()) {
@@ -230,6 +237,18 @@ export class GameRoom {
         return;
       }
 
+      case 'set_avatar': {
+        // Purely cosmetic; allowed any time. Validation already confirmed the
+        // avatar is one of the allowed set.
+        const p = this.game.players.find((x) => x.id === pid);
+        if (p && isAvatar(msg.avatar) && p.avatar !== msg.avatar) {
+          p.avatar = msg.avatar;
+          await this.persist();
+          this.broadcastViews();
+        }
+        return;
+      }
+
       case 'set_options': {
         // House rules are the host's call and only adjustable before kick-off.
         if (pid !== this.game.hostId || this.game.phase !== 'lobby') return;
@@ -292,10 +311,31 @@ export class GameRoom {
         return;
 
       case 'steal_pick':
+        // Hold the thief off until the victim's rearrange window has elapsed.
+        if (
+          this.game.awaiting?.type === 'steal_pick' &&
+          this.stealPickableAt !== null &&
+          Date.now() < this.stealPickableAt
+        ) {
+          this.send(ws, { t: 'error', message: 'Wait — they are still rearranging their hand' });
+          return;
+        }
         await this.runAction(ws, { type: 'steal_pick', playerId: pid, cardIndex: msg.cardIndex });
         return;
 
       case 'reorder_hand': {
+        // Once a blind steal's grace window has elapsed, the victim's hand is
+        // locked — they can no longer shuffle it to dodge the thief's pick.
+        if (
+          this.game.awaiting?.type === 'steal_pick' &&
+          this.game.awaiting.fromPlayerId === pid &&
+          this.stealPickableAt !== null &&
+          Date.now() >= this.stealPickableAt
+        ) {
+          // Re-send the authoritative order so the client snaps back.
+          this.sendView(ws, pid);
+          return;
+        }
         // A private, cosmetic rearrange: it touches only this player's hand
         // order (no version bump, no events, no timers). Applied outside the
         // action pipeline so it can't reset the Nope window or churn versions.
@@ -358,6 +398,18 @@ export class GameRoom {
    * can Nope (recursing, since resolution may open a new timed state).
    */
   private async settle(): Promise<void> {
+    // Open / close the blind-steal grace window. While a steal_pick is awaiting,
+    // the victim gets `stealShuffleMs` to rearrange before the thief may pick.
+    if (this.game.awaiting?.type === 'steal_pick') {
+      if (this.stealPickableAt === null) {
+        this.stealPickableAt = Date.now() + RULES.stealShuffleMs;
+        await this.ctx.storage.put('stealPickableAt', this.stealPickableAt);
+      }
+    } else if (this.stealPickableAt !== null) {
+      this.stealPickableAt = null;
+      await this.ctx.storage.delete('stealPickableAt');
+    }
+
     if (this.game.pending) {
       // Keep the Nope window open while anyone may still respond — including the
       // actor, who may play a Nope as a "Yup" when their action is currently
@@ -486,7 +538,10 @@ export class GameRoom {
   }
 
   private sendView(ws: WebSocket, pid: string): void {
-    this.send(ws, { t: 'view', view: projectView(this.game, this.roomCode, pid, this.nopeDeadline) });
+    this.send(ws, {
+      t: 'view',
+      view: projectView(this.game, this.roomCode, pid, this.nopeDeadline, this.stealPickableAt),
+    });
   }
 
   private broadcastViews(): void {

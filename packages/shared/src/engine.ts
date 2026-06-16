@@ -1,3 +1,4 @@
+import { defaultAvatarForIndex } from './avatars.js';
 import {
   BASE_DECK_COMPOSITION,
   CardType,
@@ -87,6 +88,7 @@ export function addPlayer(state: GameState, id: string, name: string): ApplyResu
   const player: PlayerState = {
     id,
     name,
+    avatar: defaultAvatarForIndex(state.players.length),
     hand: [],
     alive: true,
     connected: true,
@@ -383,7 +385,7 @@ function handlePlay(
     playedCardIds: removed.map((c) => c.id),
     nopes: 0,
   };
-  events.push({ type: 'cards_played', by: player.id, cards: removed, combo });
+  events.push({ type: 'cards_played', by: player.id, cards: removed, combo, target: action.target });
   return null;
 }
 

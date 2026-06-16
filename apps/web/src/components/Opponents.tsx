@@ -16,7 +16,7 @@ export function Opponents({ view }: { view: ClientGameView }) {
             animate={active ? { scale: [1, 1.05, 1] } : { scale: 1 }}
             transition={{ duration: 0.6, repeat: active ? Infinity : 0 }}
           >
-            <div style={{ fontSize: 26 }}>{p.alive ? '🐱' : '💀'}</div>
+            <div style={{ fontSize: 26 }}>{p.alive ? p.avatar : '💀'}</div>
             <div style={{ fontWeight: 800 }}>{p.name}</div>
             <div className="muted" style={{ fontSize: 13 }}>
               🃏 {p.handCount} {!p.connected && '· offline'}

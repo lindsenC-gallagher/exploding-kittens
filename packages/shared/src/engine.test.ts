@@ -858,3 +858,58 @@ describe('security: hidden-information redaction', () => {
     expect(forOther.type === 'stole' && forOther.card).toBeUndefined();
   });
 });
+
+describe('avatars', () => {
+  it('assigns distinct default avatars to the first players to join', () => {
+    const state = lobbyWith(3);
+    const avatars = state.players.map((p) => p.avatar);
+    expect(avatars.every((a) => typeof a === 'string' && a.length > 0)).toBe(true);
+    expect(new Set(avatars).size).toBe(3); // first 3 join slots are distinct
+  });
+
+  it('exposes each player avatar in the projected view', () => {
+    const state = started(2);
+    const view = projectView(state, 'ABCDEF', state.players[0].id, null);
+    expect(view.players.map((p) => p.avatar)).toEqual(state.players.map((p) => p.avatar));
+  });
+});
+
+describe('targeted actions surface the target', () => {
+  it('includes the target on the cards_played event and the Nope view', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const target = state.players.find((p) => p.id !== me)!.id;
+    const f = withCardInHand(state, me, CardType.Favor);
+    const r = applyAction(f.state, { type: 'play', playerId: me, cardIds: [f.cardId], target });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    const played = r.events.find((e) => e.type === 'cards_played');
+    expect(played && played.type === 'cards_played' && played.target).toBe(target);
+
+    // The pending action's target is exposed (redacted-safely) on the Nope view.
+    const view = projectView(r.state, 'ABCDEF', target, Date.now() + 4000);
+    expect(view.nope?.target).toBe(target);
+  });
+});
+
+describe('blind-steal grace window (view)', () => {
+  it('threads the thief pickableAt deadline into the steal view', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const target = state.players.find((p) => p.id !== me)!.id;
+    const a = withCardInHand(state, me, CardType.BeardCat);
+    const b = withCardInHand(a.state, me, CardType.BeardCat);
+    state = apply(b.state, {
+      type: 'play',
+      playerId: me,
+      cardIds: [a.cardId, b.cardId],
+      combo: 'pair',
+      target,
+    });
+    state = apply(state, { type: 'resolve_pending' });
+    expect(state.awaiting?.type).toBe('steal_pick');
+    const pickableAt = 10_000;
+    const view = projectView(state, 'ABCDEF', target, null, pickableAt);
+    expect(view.stealPick).toEqual({ by: me, from: target, pickableAt });
+  });
+});

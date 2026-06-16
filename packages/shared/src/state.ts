@@ -5,6 +5,8 @@ export type GamePhase = 'lobby' | 'playing' | 'gameOver';
 export interface PlayerState {
   id: string;
   name: string;
+  /** Chosen avatar emoji (one of {@link AVATARS}); assigned a default on join. */
+  avatar: string;
   hand: Card[];
   alive: boolean;
   connected: boolean;
@@ -121,7 +123,7 @@ export interface GameState {
 /** Events emitted by the engine to drive client animations / logs. */
 export type GameEvent =
   | { type: 'game_started'; playerOrder: string[] }
-  | { type: 'cards_played'; by: string; cards: Card[]; combo?: ComboKind }
+  | { type: 'cards_played'; by: string; cards: Card[]; combo?: ComboKind; target?: string }
   | { type: 'nope'; by: string; nopes: number }
   | { type: 'action_resolved'; kind: PendingAction['kind']; cancelled: boolean }
   | {

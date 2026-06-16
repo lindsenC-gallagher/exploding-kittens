@@ -87,14 +87,13 @@ function ConnectedRoom({
         {sock.error && (
           <motion.div
             key={sock.error}
-            initial={{ opacity: 0, y: -20 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -20 }}
+            initial={{ opacity: 0, y: -20, x: '-50%' }}
+            animate={{ opacity: 1, y: 0, x: '-50%' }}
+            exit={{ opacity: 0, y: -20, x: '-50%' }}
             style={{
               position: 'fixed',
               top: 16,
               left: '50%',
-              transform: 'translateX(-50%)',
               zIndex: 100,
               background: 'var(--danger)',
               padding: '10px 18px',

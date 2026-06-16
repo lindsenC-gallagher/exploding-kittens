@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { AVATARS } from './avatars.js';
 import { CardType } from './cards.js';
 import { parseClientMessage } from './validate.js';
 
@@ -43,6 +44,16 @@ describe('parseClientMessage — well-formed messages', () => {
       namedCard: CardType.Shuffle,
       discardCardId: undefined,
     });
+  });
+
+  it('accepts set_avatar with an allowed avatar and rejects anything else', () => {
+    expect(parseClientMessage(j({ t: 'set_avatar', avatar: AVATARS[0] }))).toEqual({
+      t: 'set_avatar',
+      avatar: AVATARS[0],
+    });
+    expect(parseClientMessage(j({ t: 'set_avatar', avatar: '🛸' }))).toBeNull(); // not in the set
+    expect(parseClientMessage(j({ t: 'set_avatar', avatar: 42 }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'set_avatar' }))).toBeNull();
   });
 
   it('coerces a missing/non-string join name to empty (clamped server-side)', () => {

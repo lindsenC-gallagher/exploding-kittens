@@ -158,21 +158,32 @@ export function DefusePrompt({
 export function StealPickModal({
   fromName,
   count,
+  msUntilPickable,
   onPick,
 }: {
   fromName: string;
   count: number;
+  /** While > 0, the victim is still rearranging and picking is locked out. */
+  msUntilPickable: number;
   onPick: (index: number) => void;
 }) {
+  const locked = msUntilPickable > 0;
   return (
     <ModalShell>
       <h2 className="title" style={{ fontSize: 26 }}>
         🙈 Blind steal from {fromName}
       </h2>
-      <p className="muted">
-        Their hand is face-down. Pick one — you won&apos;t know what you&apos;re grabbing until it&apos;s
-        yours!
-      </p>
+      {locked ? (
+        <p className="muted">
+          ⏳ {fromName} is shuffling their hand — you can pick in{' '}
+          <b>{Math.ceil(msUntilPickable / 1000)}s</b>.
+        </p>
+      ) : (
+        <p className="muted">
+          Their hand is face-down. Pick one — you won&apos;t know what you&apos;re grabbing until
+          it&apos;s yours!
+        </p>
+      )}
       <div
         className="row"
         style={{ flexWrap: 'wrap', justifyContent: 'center', margin: '18px 0', gap: 12 }}
@@ -181,8 +192,13 @@ export function StealPickModal({
           <span className="muted">They have no cards to take.</span>
         ) : (
           Array.from({ length: count }).map((_, i) => (
-            <motion.div key={i} whileHover={{ y: -12, scale: 1.05 }} whileTap={{ scale: 0.95 }}>
-              <CardBack selectable label={`#${i + 1}`} onClick={() => onPick(i)} />
+            <motion.div
+              key={i}
+              whileHover={locked ? undefined : { y: -12, scale: 1.05 }}
+              whileTap={locked ? undefined : { scale: 0.95 }}
+              style={locked ? { opacity: 0.5, pointerEvents: 'none' } : undefined}
+            >
+              <CardBack selectable={!locked} label={`#${i + 1}`} onClick={() => (locked ? undefined : onPick(i))} />
             </motion.div>
           ))
         )}

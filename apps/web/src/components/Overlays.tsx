@@ -111,6 +111,8 @@ function comboLabel(combo?: ComboKind): string | null {
 export interface PlayedBannerData {
   id: number;
   byName: string;
+  /** Name of the targeted player, when the action is aimed at someone. */
+  targetName?: string;
   cards: CardModel[];
   combo?: ComboKind;
   /**
@@ -131,11 +133,14 @@ export interface PlayedBannerData {
  */
 export function PlayedBanner({ banner }: { banner: PlayedBannerData | null }) {
   const pos = banner?.pos ?? null;
+  // Centering is done via framer's own x/y transform (not CSS transform), so it
+  // composes with the scale animation instead of being clobbered by it.
+  const above = !pos || pos.placement === 'above';
   const style: CSSProperties = pos
-    ? pos.placement === 'below'
-      ? { left: pos.x, top: pos.y + 16, transform: 'translateX(-50%)' }
-      : { left: pos.x, top: pos.y - 16, transform: 'translate(-50%, -100%)' }
-    : { left: '50%', top: '16%', transform: 'translateX(-50%)' };
+    ? { left: pos.x, top: above ? pos.y - 16 : pos.y + 16 }
+    : { left: '50%', top: '16%' };
+  const tx = '-50%';
+  const ty = above ? '-100%' : '0%';
   return (
     <AnimatePresence>
       {banner && (
@@ -143,9 +148,9 @@ export function PlayedBanner({ banner }: { banner: PlayedBannerData | null }) {
           key={banner.id}
           className="played-banner"
           style={style}
-          initial={{ opacity: 0, scale: 0.7 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 1.1 }}
+          initial={{ opacity: 0, scale: 0.7, x: tx, y: ty }}
+          animate={{ opacity: 1, scale: 1, x: tx, y: ty }}
+          exit={{ opacity: 0, scale: 1.1, x: tx, y: ty }}
           transition={{ type: 'spring', stiffness: 320, damping: 24 }}
         >
           {pos && <div className={`played-arrow ${pos.placement === 'below' ? 'up' : 'down'}`} />}
@@ -163,6 +168,7 @@ export function PlayedBanner({ banner }: { banner: PlayedBannerData | null }) {
             ))}
           </div>
           {comboLabel(banner.combo) && <div className="played-combo">{comboLabel(banner.combo)}</div>}
+          {banner.targetName && <div className="played-target">🎯 targeting {banner.targetName}</div>}
         </motion.div>
       )}
     </AnimatePresence>
@@ -189,9 +195,11 @@ export function StolenToast({ toast }: { toast: StolenToastData | null }) {
         <motion.div
           key={toast.id}
           className="stolen-toast"
-          initial={{ opacity: 0, y: -40, scale: 0.8 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: -30, scale: 0.9 }}
+          // x:'-50%' centers via framer's transform (composes with scale); the
+          // CSS translateX would otherwise be clobbered by the animation.
+          initial={{ opacity: 0, y: -40, scale: 0.8, x: '-50%' }}
+          animate={{ opacity: 1, y: 0, scale: 1, x: '-50%' }}
+          exit={{ opacity: 0, y: -30, scale: 0.9, x: '-50%' }}
           transition={{ type: 'spring', stiffness: 300, damping: 22 }}
         >
           <div className="stolen-text">

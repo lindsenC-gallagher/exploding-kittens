@@ -64,11 +64,35 @@ interface LogLine {
   text: string;
 }
 
+type LogSize = 'min' | 'normal' | 'max';
+
+const SIZE_KEY = 'ek_log_size';
+
+function readSize(): LogSize {
+  try {
+    const s = localStorage.getItem(SIZE_KEY);
+    if (s === 'min' || s === 'normal' || s === 'max') return s;
+  } catch {
+    /* ignore */
+  }
+  return 'normal';
+}
+
 export function EventLog({ view, lastEvents }: { view: ClientGameView; lastEvents: GameEventEnvelope | null }) {
   const [lines, setLines] = useState<LogLine[]>([]);
+  const [size, setSize] = useState<LogSize>(readSize);
   const seen = useRef(0);
   const nextId = useRef(0);
   const ref = useRef<HTMLDivElement>(null);
+
+  function changeSize(next: LogSize) {
+    setSize(next);
+    try {
+      localStorage.setItem(SIZE_KEY, next);
+    } catch {
+      /* ignore */
+    }
+  }
 
   useEffect(() => {
     if (!lastEvents || lastEvents.id === seen.current) return;
@@ -82,17 +106,63 @@ export function EventLog({ view, lastEvents }: { view: ClientGameView; lastEvent
 
   useEffect(() => {
     ref.current?.scrollTo(0, ref.current.scrollHeight);
-  }, [lines]);
+  }, [lines, size]);
 
   return (
-    <div className="log">
-      <div className="log-title">📜 Game log</div>
-      <div className="log-body" ref={ref}>
-        {lines.length === 0 && <p className="muted">Nothing yet — make a move!</p>}
-        {lines.map((l) => (
-          <p key={l.id}>{l.text}</p>
-        ))}
+    <div className={`log ${size}`}>
+      <div className="log-title">
+        <span>📜 Game log</span>
+        <span className="log-controls">
+          {size !== 'min' && (
+            <button
+              className="log-btn"
+              aria-label="Minimize log"
+              title="Minimize"
+              onClick={() => changeSize('min')}
+            >
+              —
+            </button>
+          )}
+          {size !== 'max' && (
+            <button
+              className="log-btn"
+              aria-label="Maximize log"
+              title="Maximize"
+              onClick={() => changeSize('max')}
+            >
+              ▢
+            </button>
+          )}
+          {size === 'max' && (
+            <button
+              className="log-btn"
+              aria-label="Restore log"
+              title="Restore"
+              onClick={() => changeSize('normal')}
+            >
+              ❐
+            </button>
+          )}
+          {size === 'min' && (
+            <button
+              className="log-btn"
+              aria-label="Expand log"
+              title="Expand"
+              onClick={() => changeSize('normal')}
+            >
+              ▢
+            </button>
+          )}
+        </span>
       </div>
+      {size !== 'min' && (
+        <div className="log-body" ref={ref}>
+          {lines.length === 0 && <p className="muted">Nothing yet — make a move!</p>}
+          {lines.map((l) => (
+            <p key={l.id}>{l.text}</p>
+          ))}
+        </div>
+      )}
     </div>
   );
 }

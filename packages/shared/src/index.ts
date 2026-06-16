@@ -1,3 +1,4 @@
+export * from './avatars.js';
 export * from './cards.js';
 export * from './rng.js';
 export * from './state.js';

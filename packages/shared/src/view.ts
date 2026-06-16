@@ -1,3 +1,4 @@
+import { DEFAULT_AVATAR } from './avatars.js';
 import { RULES } from './cards.js';
 import { DEFAULT_OPTIONS, type GameEvent, type GameState } from './state.js';
 import type { ClientGameView, PublicPlayer } from './protocol.js';
@@ -12,10 +13,12 @@ export function projectView(
   roomCode: string,
   recipientId: string,
   nopeDeadline: number | null,
+  stealPickableAt: number | null = null,
 ): ClientGameView {
   const players: PublicPlayer[] = state.players.map((p) => ({
     id: p.id,
     name: p.name,
+    avatar: p.avatar ?? DEFAULT_AVATAR,
     handCount: p.hand.length,
     alive: p.alive,
     connected: p.connected,
@@ -36,7 +39,11 @@ export function projectView(
     } else if (state.awaiting.type === 'steal_pick') {
       // Public: everyone learns a blind steal is happening (a pair was visibly
       // played). The thief uses it to render the picker; the victim, to rearrange.
-      stealPick = { by: state.awaiting.playerId, from: state.awaiting.fromPlayerId };
+      stealPick = {
+        by: state.awaiting.playerId,
+        from: state.awaiting.fromPlayerId,
+        pickableAt: stealPickableAt ?? 0,
+      };
     }
   }
 
@@ -59,6 +66,7 @@ export function projectView(
           kind: state.pending.kind,
           nopes: state.pending.nopes,
           deadline: nopeDeadline ?? 0,
+          target: state.pending.target,
         }
       : null,
     prompt,

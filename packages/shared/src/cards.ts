@@ -98,6 +98,11 @@ export const RULES = {
   attackTurns: 2,
   /** Milliseconds the Nope window stays open (reset on each Nope). */
   nopeWindowMs: 4000,
+  /**
+   * Grace window after a blind steal opens during which the victim may
+   * rearrange their face-down hand and the thief cannot pick yet.
+   */
+  stealShuffleMs: 3000,
   /** Hard ceiling on a single Nope window no matter how many Nopes stack. */
   maxNopeWindowMs: 20000,
   /** Milliseconds before an unanswered forced choice (Favor/Defuse) auto-resolves. */

@@ -3,7 +3,7 @@ import { hostCreateRoom, joinRoom, newPlayer, type Player } from './helpers.js';
 
 /**
  * Covers the lobby "house rules" toggles (host-only, synced to everyone) and the
- * game log's collapse / hover-to-expand behaviour.
+ * game log's explicit minimize / maximize controls.
  */
 test.describe('Exploding Kittens — house rules & log', () => {
   let players: Player[] = [];
@@ -38,7 +38,26 @@ test.describe('Exploding Kittens — house rules & log', () => {
     await expect(guestRule.locator('.rule-state')).toHaveText('Off');
   });
 
-  test('the game log is collapsed by default and expands on hover', async ({ browser }) => {
+  test('a chosen avatar syncs to other players in the lobby', async ({ browser }) => {
+    const host = await newPlayer(browser, 'Whiskers');
+    const guest = await newPlayer(browser, 'Mittens');
+    players = [host, guest];
+
+    const code = await hostCreateRoom(host);
+    await joinRoom(guest, code);
+    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
+
+    // Host picks the unicorn; their pick reflects as selected...
+    const pick = host.page.locator('.avatar-pick', { hasText: '🦄' });
+    await pick.click();
+    await expect(pick).toHaveAttribute('aria-pressed', 'true');
+
+    // ...and the guest sees the host's lobby row update to that avatar.
+    const hostRow = guest.page.locator('.row', { hasText: 'Whiskers' }).first();
+    await expect(hostRow).toContainText('🦄');
+  });
+
+  test('the game log resizes via explicit minimize / maximize controls', async ({ browser }) => {
     const host = await newPlayer(browser, 'Whiskers');
     const guest = await newPlayer(browser, 'Mittens');
     players = [host, guest];
@@ -50,16 +69,25 @@ test.describe('Exploding Kittens — house rules & log', () => {
     await expect(host.page.locator('.hand .card')).toHaveCount(8);
 
     const log = host.page.locator('.log');
-    const opacity = () => log.evaluate((el) => getComputedStyle(el).opacity);
-    const maxHeight = () => log.evaluate((el) => getComputedStyle(el).maxHeight);
+    const body = host.page.locator('.log .log-body');
 
-    // Collapsed: dimmed and short.
-    expect(await opacity()).toBe('0.62');
-    expect(await maxHeight()).toBe('118px');
+    // Default: normal size, body visible (no hover needed).
+    await expect(log).toHaveClass(/\bnormal\b/);
+    await expect(body).toBeVisible();
 
-    // Hovering expands it: fully opaque and taller.
-    await log.hover();
-    await expect.poll(opacity).toBe('1');
-    await expect.poll(async () => (await maxHeight()) !== '118px').toBe(true);
+    // Maximize: the log grows and the body stays visible.
+    await host.page.getByRole('button', { name: 'Maximize log' }).click();
+    await expect(log).toHaveClass(/\bmax\b/);
+    await expect(body).toBeVisible();
+
+    // Minimize: only the title bar remains (body hidden).
+    await host.page.getByRole('button', { name: 'Minimize log' }).click();
+    await expect(log).toHaveClass(/\bmin\b/);
+    await expect(body).toBeHidden();
+
+    // Expand back from minimized restores the body.
+    await host.page.getByRole('button', { name: 'Expand log' }).click();
+    await expect(log).toHaveClass(/\bnormal\b/);
+    await expect(body).toBeVisible();
   });
 });

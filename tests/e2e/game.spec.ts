@@ -61,7 +61,7 @@ test.describe('Exploding Kittens — realtime multiplayer', () => {
 
     // Feature 2: each hand card is wrapped in a draggable item + a drag hint.
     await expect(host.page.locator('.hand .hand-item')).toHaveCount(8);
-    await expect(host.page.getByText(/Drag your cards to rearrange/)).toBeVisible();
+    await expect(host.page.getByText(/drag to rearrange your hand/i)).toBeVisible();
     // Feature 1: the (bigger) game log is present with its header.
     await expect(host.page.locator('.log .log-title')).toBeVisible();
 
