@@ -4,7 +4,6 @@ import { CardType, type CardType as CT, type ClientMessage } from '@ek/shared';
 import type { UseGameSocket } from '../hooks/useGameSocket.js';
 import { Card } from './Card.js';
 import { Opponents } from './Opponents.js';
-import { TurnOrder } from './TurnOrder.js';
 import { Piles } from './Piles.js';
 import { EventLog } from './EventLog.js';
 import { MuteButton } from './MuteButton.js';
@@ -388,7 +387,6 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
   return (
     <div className="table">
       <MuteButton />
-      <TurnOrder view={view} />
       <Opponents view={view} />
 
       <div className="stack" style={{ justifyContent: 'center' }}>

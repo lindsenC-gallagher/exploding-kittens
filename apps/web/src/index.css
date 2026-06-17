@@ -202,10 +202,15 @@ input:focus {
 }
 .opponents {
   display: flex;
-  gap: 16px;
+  gap: 6px;
   justify-content: center;
   flex-wrap: wrap;
   padding: 10px;
+}
+.opponent-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
 }
 .opponent {
   background: var(--panel);
@@ -831,64 +836,11 @@ input:focus {
   text-decoration: none;
 }
 
-/* ---- turn-order strip (top of table) ---- */
-.turn-order {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-wrap: wrap;
-  gap: 6px;
-  padding: 6px 10px;
-}
-.turn-order-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-.turn-chip {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  padding: 5px 12px;
-  border-radius: 999px;
-  background: var(--panel);
-  border: 1px solid var(--panel-border);
-  font-weight: 700;
-  font-size: 14px;
-  white-space: nowrap;
-}
-.turn-chip.active {
-  background: rgba(255, 209, 102, 0.16);
-  border-color: var(--warn);
-  box-shadow: 0 0 0 2px var(--warn), 0 0 16px rgba(255, 209, 102, 0.5);
-}
-.turn-chip.dead {
-  opacity: 0.4;
-  filter: grayscale(1);
-}
-.turn-chip-avatar {
-  font-size: 18px;
-}
-.turn-chip-name {
-  max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.turn-chip-badge {
-  font-size: 11px;
-  font-weight: 900;
-  color: #1a1030;
-  background: var(--warn);
-  border-radius: 999px;
-  padding: 1px 7px;
-}
+/* ---- turn-order arrows between the player cards ---- */
 .turn-order-arrow {
   color: var(--muted);
   font-weight: 900;
   opacity: 0.7;
-}
-.turn-order-arrow.loop {
-  font-size: 18px;
 }
 
 /* ---- mute toggle ---- */
