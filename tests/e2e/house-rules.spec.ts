@@ -68,6 +68,10 @@ test.describe('Exploding Kittens — house rules & log', () => {
     await expect(host.page.locator('.hand .card')).toHaveCount(8);
     await host.page.getByRole('button', { name: 'Help & rules' }).click();
     await expect(host.page.getByRole('heading', { name: /How to play 🐶/ })).toBeVisible();
+    // Naming follows the skin too: dog wording shows, no "cat" naming leaks.
+    await expect(host.page.getByText(/Exploding Puppy/)).toBeVisible();
+    await expect(host.page.getByText(/Dog Cards/)).toBeVisible();
+    await expect(host.page.getByText(/Exploding Kitten/)).toHaveCount(0);
   });
 
   test('a chosen avatar syncs to other players in the lobby', async ({ browser }) => {

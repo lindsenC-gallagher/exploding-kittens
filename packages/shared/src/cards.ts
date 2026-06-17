@@ -3,6 +3,8 @@
  * Counts and behaviour are faithful to the original (Kickstarter) base game.
  */
 
+import type { Theme } from './state.js';
+
 export enum CardType {
   ExplodingKitten = 'exploding_kitten',
   Defuse = 'defuse',
@@ -62,7 +64,7 @@ export const BASE_DECK_COMPOSITION: Readonly<Record<CardType, number>> = {
   [CardType.RainbowRalphingCat]: 4,
 };
 
-/** Human-readable names, faithful to the original card titles. */
+/** Human-readable names, faithful to the original card titles (cats theme). */
 export const CARD_NAMES: Readonly<Record<CardType, string>> = {
   [CardType.ExplodingKitten]: 'Exploding Kitten',
   [CardType.Defuse]: 'Defuse',
@@ -78,6 +80,33 @@ export const CARD_NAMES: Readonly<Record<CardType, string>> = {
   [CardType.BeardCat]: 'Beard Cat',
   [CardType.RainbowRalphingCat]: 'Rainbow Ralphing Cat',
 };
+
+/**
+ * Dog-skin card names — same cards and rules, dog-themed titles. Only the names
+ * that reference cats change; the neutral action cards (Defuse, Nope, Attack,
+ * Skip, Favor, Shuffle, See the Future) keep their titles. Stays consistent with
+ * the "Exploding Puppy" / "Dog Cards" wording used elsewhere in the dog skin.
+ */
+export const DOG_CARD_NAMES: Readonly<Record<CardType, string>> = {
+  ...CARD_NAMES,
+  [CardType.ExplodingKitten]: 'Exploding Puppy',
+  [CardType.Tacocat]: 'Tacodog',
+  [CardType.Cattermelon]: 'Dogermelon',
+  [CardType.HairyPotatoCat]: 'Hairy Potato Dog',
+  [CardType.BeardCat]: 'Beard Dog',
+  [CardType.RainbowRalphingCat]: 'Rainbow Ralphing Dog',
+};
+
+/** Card names keyed by theme. {@link cardNames} is the preferred accessor. */
+export const THEME_CARD_NAMES: Readonly<Record<Theme, Readonly<Record<CardType, string>>>> = {
+  cats: CARD_NAMES,
+  dogs: DOG_CARD_NAMES,
+};
+
+/** Card names for a given theme, falling back to cats for unknown values. */
+export function cardNames(theme: Theme | undefined): Readonly<Record<CardType, string>> {
+  return (theme && THEME_CARD_NAMES[theme]) || CARD_NAMES;
+}
 
 /** A concrete card instance in play, with a stable unique id. */
 export interface Card {

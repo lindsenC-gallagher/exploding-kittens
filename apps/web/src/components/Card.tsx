@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { CARD_NAMES, type Card as CardModel, type CardType } from '@ek/shared';
+import { cardNames, type Card as CardModel, type CardType } from '@ek/shared';
 import { cardVisuals } from '../data/cardVisuals.js';
 import { useTheme } from '../theme.js';
 
@@ -13,7 +13,8 @@ interface CardProps {
 }
 
 export function Card({ type, selectable, selected, onClick, layoutId, small }: CardProps) {
-  const v = cardVisuals(useTheme())[type];
+  const theme = useTheme();
+  const v = cardVisuals(theme)[type];
   return (
     <motion.div
       layoutId={layoutId}
@@ -29,7 +30,7 @@ export function Card({ type, selectable, selected, onClick, layoutId, small }: C
     >
       <span className="corner">{v.emoji.slice(0, 2)}</span>
       <span className="emoji">{v.emoji}</span>
-      <span className="name">{CARD_NAMES[type]}</span>
+      <span className="name">{cardNames(theme)[type]}</span>
     </motion.div>
   );
 }

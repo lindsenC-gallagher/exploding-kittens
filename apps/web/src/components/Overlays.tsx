@@ -1,7 +1,8 @@
 import type { CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CARD_NAMES, type Card as CardModel, type ClientGameView, type ComboKind } from '@ek/shared';
+import { cardNames, type Card as CardModel, type ClientGameView, type ComboKind } from '@ek/shared';
 import { Card, CardBack } from './Card.js';
+import { useTheme } from '../theme.js';
 
 /** Big "NOPE!" stamp that slams onto the screen. */
 export function NopeStamp({ show }: { show: boolean }) {
@@ -31,6 +32,7 @@ export function NopeStamp({ show }: { show: boolean }) {
 
 /** Full-screen explosion flash. */
 export function ExplosionFlash({ show }: { show: boolean }) {
+  const theme = useTheme();
   return (
     <AnimatePresence>
       {show && (
@@ -46,7 +48,7 @@ export function ExplosionFlash({ show }: { show: boolean }) {
             transition={{ duration: 0.8 }}
             style={{ fontSize: 160 }}
           >
-            💥🙀
+            {theme === 'dogs' ? '💥🐶' : '💥🙀'}
           </motion.div>
         </motion.div>
       )}
@@ -189,6 +191,7 @@ export interface StolenToastData {
  * your Y") and the thief ("You took X's Y"). Others never see which card moved.
  */
 export function StolenToast({ toast }: { toast: StolenToastData | null }) {
+  const theme = useTheme();
   return (
     <AnimatePresence>
       {toast && (
@@ -205,11 +208,12 @@ export function StolenToast({ toast }: { toast: StolenToastData | null }) {
           <div className="stolen-text">
             {toast.mine ? (
               <>
-                🦝 You stole <b>{CARD_NAMES[toast.card.type]}</b> from {toast.otherName}!
+                🦝 You stole <b>{cardNames(theme)[toast.card.type]}</b> from {toast.otherName}!
               </>
             ) : (
               <>
-                😿 {toast.otherName} stole your <b>{CARD_NAMES[toast.card.type]}</b>!
+                {theme === 'dogs' ? '😢' : '😿'} {toast.otherName} stole your{' '}
+                <b>{cardNames(theme)[toast.card.type]}</b>!
               </>
             )}
           </div>
@@ -301,9 +305,11 @@ export function DrawReveal({ reveal }: { reveal: DrawRevealData | null }) {
 
 /** End-of-game winner screen. */
 export function WinScreen({ view, onLeave }: { view: ClientGameView; onLeave: () => void }) {
+  const theme = useTheme();
   if (view.phase !== 'gameOver') return null;
   const winner = view.players.find((p) => p.id === view.winnerId);
   const youWon = view.winnerId === view.youId;
+  const dogs = theme === 'dogs';
   return (
     <div className="overlay">
       <motion.div
@@ -318,10 +324,10 @@ export function WinScreen({ view, onLeave }: { view: ClientGameView; onLeave: ()
           animate={{ rotate: [0, -10, 10, 0], y: [0, -10, 0] }}
           transition={{ repeat: Infinity, duration: 2 }}
         >
-          {youWon ? '🏆🐱' : '🙀'}
+          {youWon ? (dogs ? '🏆🐶' : '🏆🐱') : dogs ? '🐶' : '🙀'}
         </motion.div>
         <h1 className="title">{youWon ? 'You survived!' : `${winner?.name ?? 'Someone'} wins!`}</h1>
-        <p className="muted">The last kitty standing takes it all.</p>
+        <p className="muted">The last {dogs ? 'pup' : 'kitty'} standing takes it all.</p>
         <button onClick={onLeave} style={{ marginTop: 16 }}>
           Back to home
         </button>

@@ -432,7 +432,8 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
               <>🔒 {nameOf(stealPick!.by)} is now picking — your hand is locked in!</>
             ) : (
               <>
-                😼 {nameOf(stealPick!.by)} is about to blind-steal — rearrange your cards now!{' '}
+                {view!.options.theme === 'dogs' ? '🐶' : '😼'} {nameOf(stealPick!.by)} is about to
+                blind-steal — rearrange your cards now!{' '}
                 <b>{Math.ceil(stealShuffleLeft / 1000)}s</b> until your hand locks.
               </>
             )}

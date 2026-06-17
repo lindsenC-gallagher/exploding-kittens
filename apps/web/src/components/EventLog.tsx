@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { CARD_NAMES, type ClientGameView, type GameEvent } from '@ek/shared';
+import { cardNames, type ClientGameView, type GameEvent } from '@ek/shared';
 import type { GameEventEnvelope } from '../hooks/useGameSocket.js';
 import { cardVisuals } from '../data/cardVisuals.js';
 import type { CardType } from '@ek/shared';
@@ -11,7 +11,7 @@ function nameOf(view: ClientGameView, id: string): string {
 
 /** "🃏 Skip" — leading emoji + card name, for inline mentions in the log. */
 function cardLabel(view: ClientGameView, type: CardType): string {
-  return `${cardVisuals(view.options.theme)[type].emoji.slice(0, 2)} ${CARD_NAMES[type]}`;
+  return `${cardVisuals(view.options.theme)[type].emoji.slice(0, 2)} ${cardNames(view.options.theme)[type]}`;
 }
 
 function describe(view: ClientGameView, e: GameEvent): string | null {
@@ -19,7 +19,7 @@ function describe(view: ClientGameView, e: GameEvent): string | null {
     case 'game_started':
       return '🎬 Game started!';
     case 'cards_played':
-      return `🃏 ${nameOf(view, e.by)} played ${e.cards.map((c) => CARD_NAMES[c.type]).join(' + ')}`;
+      return `🃏 ${nameOf(view, e.by)} played ${e.cards.map((c) => cardNames(view.options.theme)[c.type]).join(' + ')}`;
     case 'nope':
       return `🚫 Nope! (${e.nopes})`;
     case 'action_resolved':
@@ -39,7 +39,8 @@ function describe(view: ClientGameView, e: GameEvent): string | null {
       const victim = nameOf(view, e.from);
       if (e.card) {
         if (e.by === view.youId) return `🦝 You stole ${cardLabel(view, e.card.type)} from ${victim}`;
-        if (e.from === view.youId) return `😿 ${thief} stole your ${cardLabel(view, e.card.type)}`;
+        if (e.from === view.youId)
+          return `${view.options.theme === 'dogs' ? '😢' : '😿'} ${thief} stole your ${cardLabel(view, e.card.type)}`;
         return `🦝 ${thief} stole ${cardLabel(view, e.card.type)} from ${victim}`;
       }
       return `🦝 ${thief} stole a card from ${victim}`;
@@ -49,7 +50,7 @@ function describe(view: ClientGameView, e: GameEvent): string | null {
     case 'exploded':
       return `💥 ${nameOf(view, e.playerId)} EXPLODED!`;
     case 'defused':
-      return `🧯 ${nameOf(view, e.playerId)} defused the kitten!`;
+      return `🧯 ${nameOf(view, e.playerId)} defused the ${view.options.theme === 'dogs' ? 'puppy' : 'kitten'}!`;
     case 'turn_changed':
       return null;
     case 'game_over':

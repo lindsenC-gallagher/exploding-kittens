@@ -4,10 +4,12 @@ import {
   CARD_NAMES,
   CAT_CARDS,
   CardType,
+  cardNames,
   type Card as CardModel,
   type ClientGameView,
 } from '@ek/shared';
 import { Card, CardBack } from './Card.js';
+import { useTheme } from '../theme.js';
 
 function ModalShell({ children }: { children: React.ReactNode }) {
   return (
@@ -40,6 +42,7 @@ export function DefusePrompt({
   onDefuse: (cardId: string, insertPosition: number) => void;
 }) {
   const max = view.drawPileCount;
+  const dogs = view.options.theme === 'dogs';
   const deckRef = useRef<HTMLDivElement>(null);
   const [deckW, setDeckW] = useState(0);
   const [pos, setPos] = useState(() => Math.floor(max / 2));
@@ -76,8 +79,9 @@ export function DefusePrompt({
         🧯 Phew — Defused!
       </h2>
       <p className="muted">
-        Your Defuse fired automatically and saved you. Now secretly hide the Exploding Kitten back in
-        the deck — <b>drag it onto the deck and drop</b> to bury it anywhere, or tap a shortcut.
+        Your Defuse fired automatically and saved you. Now secretly hide the Exploding{' '}
+        {dogs ? 'Puppy' : 'Kitten'} back in the deck — <b>drag it onto the deck and drop</b> to bury
+        it anywhere, or tap a shortcut.
       </p>
 
       <div className="defuse-deck-area">
@@ -247,6 +251,7 @@ export function TargetPicker({
   onCancel: () => void;
 }) {
   const targets = view.players.filter((p) => p.id !== view.youId && p.alive);
+  const pawFace = view.options.theme === 'dogs' ? '🐶' : '🐱';
   return (
     <ModalShell>
       <h2 className="title" style={{ fontSize: 26 }}>
@@ -255,7 +260,7 @@ export function TargetPicker({
       <div className="row" style={{ justifyContent: 'center', flexWrap: 'wrap', margin: '16px 0' }}>
         {targets.map((p) => (
           <button key={p.id} className="secondary" onClick={() => onPick(p.id)}>
-            🐱 {p.name} ({p.handCount})
+            {pawFace} {p.name} ({p.handCount})
           </button>
         ))}
       </div>
@@ -276,6 +281,7 @@ export function NamedCardPicker({
   onPick: (type: CardType) => void;
   onCancel: () => void;
 }) {
+  const names = cardNames(useTheme());
   // All non-cat, "interesting" cards plus cat cards are nameable.
   const options = (Object.keys(CARD_NAMES) as CardType[]).filter(
     (t) => t !== 'exploding_kitten',
@@ -288,7 +294,7 @@ export function NamedCardPicker({
       <div className="row" style={{ flexWrap: 'wrap', justifyContent: 'center', margin: '14px 0', gap: 8 }}>
         {options.map((t) => (
           <button key={t} className="secondary" onClick={() => onPick(t)}>
-            {CARD_NAMES[t]}
+            {names[t]}
           </button>
         ))}
       </div>

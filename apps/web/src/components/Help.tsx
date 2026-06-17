@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { CARD_NAMES, CardType, type ClientGameView } from '@ek/shared';
+import { cardNames, CardType, type ClientGameView } from '@ek/shared';
 import { cardVisuals } from '../data/cardVisuals.js';
 import { useTheme } from '../theme.js';
 
@@ -16,11 +16,12 @@ const SINGLES: CardType[] = [
 ];
 
 function HelpCard({ type }: { type: CardType }) {
-  const v = cardVisuals(useTheme())[type];
+  const theme = useTheme();
+  const v = cardVisuals(theme)[type];
   return (
     <div className="help-card">
       <span className="help-emoji">{v.emoji}</span>
-      <span className="help-card-name">{CARD_NAMES[type]}</span>
+      <span className="help-card-name">{cardNames(theme)[type]}</span>
       <span className="help-card-effect">{v.blurb}</span>
     </div>
   );
@@ -77,7 +78,7 @@ export function HelpButton({ view }: { view: ClientGameView }) {
               <ul className="help-rules">
                 <li>🎯 Be the last player who hasn&apos;t exploded.</li>
                 <li>🔄 Your turn: play any cards, then draw 1 to end it.</li>
-                <li>🙀 Draw an Exploding Kitten and you&apos;re out — unless you 🧯 Defuse, then hide it back in the deck.</li>
+                <li>{dogs ? '🐶' : '🙀'} Draw an Exploding {dogs ? 'Puppy' : 'Kitten'} and you&apos;re out — unless you 🧯 Defuse, then hide it back in the deck.</li>
               </ul>
 
               <div className="help-counts">
