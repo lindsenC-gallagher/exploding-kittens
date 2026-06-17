@@ -76,6 +76,15 @@ function readSize(): LogSize {
   } catch {
     /* ignore */
   }
+  // On phones/tablets the log floats over the bottom hand, so start it collapsed
+  // — the player can expand it deliberately. (Desktop keeps the roomy default.)
+  try {
+    if (typeof window !== 'undefined' && window.matchMedia?.('(max-width: 900px)').matches) {
+      return 'min';
+    }
+  } catch {
+    /* ignore */
+  }
   return 'normal';
 }
 
