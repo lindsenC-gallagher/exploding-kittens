@@ -38,6 +38,38 @@ test.describe('Exploding Kittens — house rules & log', () => {
     await expect(guestRule.locator('.rule-state')).toHaveText('Off');
   });
 
+  test('host picks the dogs theme; it syncs (read-only) and swaps the card art', async ({
+    browser,
+  }) => {
+    const host = await newPlayer(browser, 'Whiskers');
+    const guest = await newPlayer(browser, 'Mittens');
+    players = [host, guest];
+
+    const code = await hostCreateRoom(host);
+    await joinRoom(guest, code);
+    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
+
+    const hostCats = host.page.locator('.theme-pick', { hasText: 'Cats' });
+    const hostDogs = host.page.locator('.theme-pick', { hasText: 'Dogs' });
+    const guestDogs = guest.page.locator('.theme-pick', { hasText: 'Dogs' });
+
+    // Default: cats selected everywhere; the guest's picker is read-only.
+    await expect(hostCats).toHaveAttribute('aria-pressed', 'true');
+    await expect(hostDogs).toHaveAttribute('aria-pressed', 'false');
+    await expect(guestDogs).toBeDisabled();
+
+    // Host switches to dogs; it propagates to the guest in realtime.
+    await hostDogs.click();
+    await expect(hostDogs).toHaveAttribute('aria-pressed', 'true');
+    await expect(guestDogs).toHaveAttribute('aria-pressed', 'true');
+
+    // The art swap reaches the table: the help sheet reads "How to play 🐶".
+    await host.page.getByRole('button', { name: /Start game/ }).click();
+    await expect(host.page.locator('.hand .card')).toHaveCount(8);
+    await host.page.getByRole('button', { name: 'Help & rules' }).click();
+    await expect(host.page.getByRole('heading', { name: /How to play 🐶/ })).toBeVisible();
+  });
+
   test('a chosen avatar syncs to other players in the lobby', async ({ browser }) => {
     const host = await newPlayer(browser, 'Whiskers');
     const guest = await newPlayer(browser, 'Mittens');

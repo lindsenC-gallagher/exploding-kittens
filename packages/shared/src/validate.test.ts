@@ -77,6 +77,20 @@ describe('parseClientMessage — well-formed messages', () => {
       options: {},
     });
   });
+
+  it('accepts set_options with a valid theme and alongside flags', () => {
+    expect(parseClientMessage(j({ t: 'set_options', options: { theme: 'dogs' } }))).toEqual({
+      t: 'set_options',
+      options: { theme: 'dogs' },
+    });
+    expect(parseClientMessage(j({ t: 'set_options', options: { theme: 'cats' } }))).toEqual({
+      t: 'set_options',
+      options: { theme: 'cats' },
+    });
+    expect(
+      parseClientMessage(j({ t: 'set_options', options: { allowPairSteal: false, theme: 'dogs' } })),
+    ).toEqual({ t: 'set_options', options: { allowPairSteal: false, theme: 'dogs' } });
+  });
 });
 
 describe('parseClientMessage — malformed input is rejected (DoS hardening)', () => {
@@ -138,6 +152,11 @@ describe('parseClientMessage — malformed input is rejected (DoS hardening)', (
     expect(parseClientMessage(j({ t: 'set_options', options: 'all' }))).toBeNull();
     expect(parseClientMessage(j({ t: 'set_options', options: null }))).toBeNull();
     expect(parseClientMessage(j({ t: 'set_options', options: { allowPairSteal: 'yes' } }))).toBeNull();
+  });
+
+  it('rejects set_options with an unknown or non-string theme', () => {
+    expect(parseClientMessage(j({ t: 'set_options', options: { theme: 'fish' } }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'set_options', options: { theme: 7 } }))).toBeNull();
   });
 
   it('rejects oversized frames', () => {

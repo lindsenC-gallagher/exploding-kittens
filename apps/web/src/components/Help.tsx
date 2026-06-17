@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import { CARD_NAMES, CardType, type ClientGameView } from '@ek/shared';
-import { CARD_VISUALS } from '../data/cardVisuals.js';
+import { cardVisuals } from '../data/cardVisuals.js';
+import { useTheme } from '../theme.js';
 
 // Single-play cards, in a sensible reading order. Cat cards are grouped below.
 const SINGLES: CardType[] = [
@@ -15,7 +16,7 @@ const SINGLES: CardType[] = [
 ];
 
 function HelpCard({ type }: { type: CardType }) {
-  const v = CARD_VISUALS[type];
+  const v = cardVisuals(useTheme())[type];
   return (
     <div className="help-card">
       <span className="help-emoji">{v.emoji}</span>
@@ -35,6 +36,7 @@ const COMBOS: { key: keyof ClientGameView['options']; icon: string; label: strin
 /** Floating "?" button + a terse rules/cards reference. Shown in lobby and game. */
 export function HelpButton({ view }: { view: ClientGameView }) {
   const [open, setOpen] = useState(false);
+  const dogs = useTheme() === 'dogs';
   const playerCount = view.players.length;
   const ongoing = view.phase !== 'lobby';
   const eks = Math.max(0, playerCount - 1);
@@ -65,7 +67,7 @@ export function HelpButton({ view }: { view: ClientGameView }) {
             >
               <div className="row" style={{ justifyContent: 'space-between' }}>
                 <h2 className="title" style={{ fontSize: 26, margin: 0 }}>
-                  How to play 🐱
+                  How to play {dogs ? '🐶' : '🐱'}
                 </h2>
                 <button className="ghost" onClick={() => setOpen(false)} aria-label="Close">
                   ✕
@@ -82,7 +84,7 @@ export function HelpButton({ view }: { view: ClientGameView }) {
                 {ongoing ? (
                   <>
                     <span>
-                      🙀 Exploding Kittens: <b>{eks}</b>
+                      {dogs ? '🐶' : '🙀'} Exploding {dogs ? 'Puppies' : 'Kittens'}: <b>{eks}</b>
                     </span>
                     <span>
                       🧯 Defuses: <b>{defusesDealt}</b> dealt
@@ -96,7 +98,7 @@ export function HelpButton({ view }: { view: ClientGameView }) {
                 ) : (
                   <>
                     <span>
-                      🙀 Exploding Kittens: <b>{eks}</b> (players − 1)
+                      {dogs ? '🐶' : '🙀'} Exploding {dogs ? 'Puppies' : 'Kittens'}: <b>{eks}</b> (players − 1)
                     </span>
                     <span>
                       🧯 Defuses: <b>6</b> (1 each, rest in deck)
@@ -111,8 +113,8 @@ export function HelpButton({ view }: { view: ClientGameView }) {
                   <HelpCard key={t} type={t} />
                 ))}
                 <div className="help-card">
-                  <span className="help-emoji">😼</span>
-                  <span className="help-card-name">Cat Cards ×5</span>
+                  <span className="help-emoji">{dogs ? '🐶' : '😼'}</span>
+                  <span className="help-card-name">{dogs ? 'Dog' : 'Cat'} Cards ×5</span>
                   <span className="help-card-effect">No effect alone — combo them.</span>
                 </div>
               </div>

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { CARD_NAMES, type ClientGameView, type GameEvent } from '@ek/shared';
 import type { GameEventEnvelope } from '../hooks/useGameSocket.js';
-import { CARD_VISUALS } from '../data/cardVisuals.js';
+import { cardVisuals } from '../data/cardVisuals.js';
 import type { CardType } from '@ek/shared';
 
 function nameOf(view: ClientGameView, id: string): string {
@@ -10,8 +10,8 @@ function nameOf(view: ClientGameView, id: string): string {
 }
 
 /** "🃏 Skip" — leading emoji + card name, for inline mentions in the log. */
-function cardLabel(type: CardType): string {
-  return `${CARD_VISUALS[type].emoji.slice(0, 2)} ${CARD_NAMES[type]}`;
+function cardLabel(view: ClientGameView, type: CardType): string {
+  return `${cardVisuals(view.options.theme)[type].emoji.slice(0, 2)} ${CARD_NAMES[type]}`;
 }
 
 function describe(view: ClientGameView, e: GameEvent): string | null {
@@ -38,14 +38,14 @@ function describe(view: ClientGameView, e: GameEvent): string | null {
       const thief = nameOf(view, e.by);
       const victim = nameOf(view, e.from);
       if (e.card) {
-        if (e.by === view.youId) return `🦝 You stole ${cardLabel(e.card.type)} from ${victim}`;
-        if (e.from === view.youId) return `😿 ${thief} stole your ${cardLabel(e.card.type)}`;
-        return `🦝 ${thief} stole ${cardLabel(e.card.type)} from ${victim}`;
+        if (e.by === view.youId) return `🦝 You stole ${cardLabel(view, e.card.type)} from ${victim}`;
+        if (e.from === view.youId) return `😿 ${thief} stole your ${cardLabel(view, e.card.type)}`;
+        return `🦝 ${thief} stole ${cardLabel(view, e.card.type)} from ${victim}`;
       }
       return `🦝 ${thief} stole a card from ${victim}`;
     }
     case 'took_from_discard':
-      return `♻️ ${nameOf(view, e.by)} took ${cardLabel(e.card.type)} from the discard`;
+      return `♻️ ${nameOf(view, e.by)} took ${cardLabel(view, e.card.type)} from the discard`;
     case 'exploded':
       return `💥 ${nameOf(view, e.playerId)} EXPLODED!`;
     case 'defused':

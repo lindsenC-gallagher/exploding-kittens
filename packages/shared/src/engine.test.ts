@@ -677,13 +677,23 @@ describe('win condition', () => {
 });
 
 describe('house rules (options)', () => {
-  it('defaults every combo to enabled in a fresh lobby', () => {
+  it('defaults every combo to enabled and the cats theme in a fresh lobby', () => {
     const lobby = createLobby('p0');
     expect(lobby.options).toEqual({
       allowPairSteal: true,
       allowTripleDemand: true,
       allowFiveDifferent: true,
+      theme: 'cats',
     });
+  });
+
+  it('lets the lobby switch theme and carries it into the started game', () => {
+    let state = setOptions(lobbyWith(3), { theme: 'dogs' });
+    expect(state.options.theme).toBe('dogs');
+    expect(state.options.allowPairSteal).toBe(true); // combos untouched
+    const r = startGame(state, 7);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.state.options.theme).toBe('dogs');
   });
 
   it('lets the lobby toggle a rule off and carries it into the started game', () => {

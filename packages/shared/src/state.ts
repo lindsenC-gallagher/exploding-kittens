@@ -17,6 +17,16 @@ export interface PlayerState {
 export type ComboKind = 'pair' | 'triple' | 'five_different';
 
 /**
+ * Purely cosmetic card-art skin chosen by the host in the lobby. `cats` is the
+ * faithful original; `dogs` swaps the emoji art (no rules change). Threaded to
+ * every client via {@link GameOptions} so the whole table sees the same skin.
+ */
+export type Theme = 'cats' | 'dogs';
+
+/** All selectable themes, in display order (host lobby picker iterates this). */
+export const THEMES: readonly Theme[] = ['cats', 'dogs'];
+
+/**
  * Host-configurable "house rules" set in the lobby before the game starts.
  * Each flag enables an optional combo; all default to on (the faithful base
  * game). Disabling one makes the engine reject that combo and hides it client-side.
@@ -28,13 +38,16 @@ export interface GameOptions {
   allowTripleDemand: boolean;
   /** 5 different cards → take any card from the discard (the "5-card rule"). */
   allowFiveDifferent: boolean;
+  /** Cosmetic card-art skin for the whole table. Default `cats`. */
+  theme: Theme;
 }
 
-/** Faithful base-game defaults: every combo enabled. */
+/** Faithful base-game defaults: every combo enabled, classic cat art. */
 export const DEFAULT_OPTIONS: GameOptions = {
   allowPairSteal: true,
   allowTripleDemand: true,
   allowFiveDifferent: true,
+  theme: 'cats',
 };
 
 /**

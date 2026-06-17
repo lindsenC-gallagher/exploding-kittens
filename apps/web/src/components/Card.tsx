@@ -1,6 +1,7 @@
 import { motion } from 'framer-motion';
 import { CARD_NAMES, type Card as CardModel, type CardType } from '@ek/shared';
-import { CARD_VISUALS } from '../data/cardVisuals.js';
+import { cardVisuals } from '../data/cardVisuals.js';
+import { useTheme } from '../theme.js';
 
 interface CardProps {
   type: CardType;
@@ -12,7 +13,7 @@ interface CardProps {
 }
 
 export function Card({ type, selectable, selected, onClick, layoutId, small }: CardProps) {
-  const v = CARD_VISUALS[type];
+  const v = cardVisuals(useTheme())[type];
   return (
     <motion.div
       layoutId={layoutId}

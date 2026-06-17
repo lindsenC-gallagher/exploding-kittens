@@ -6,6 +6,7 @@ import { getName, getPlayerId, normalizeName, setName as persistName } from '../
 import { Lobby } from '../components/Lobby.js';
 import { GameTable } from '../components/GameTable.js';
 import { HelpButton } from '../components/Help.js';
+import { ThemeContext } from '../theme.js';
 
 export function Room() {
   const { code = '' } = useParams();
@@ -82,7 +83,7 @@ function ConnectedRoom({
   }
 
   return (
-    <>
+    <ThemeContext.Provider value={sock.view.options.theme ?? 'cats'}>
       <AnimatePresence>
         {sock.error && (
           <motion.div
@@ -119,6 +120,6 @@ function ConnectedRoom({
       ) : (
         <GameTable sock={sock} onLeave={onLeave} />
       )}
-    </>
+    </ThemeContext.Provider>
   );
 }

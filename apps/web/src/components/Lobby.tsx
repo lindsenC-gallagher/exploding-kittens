@@ -1,13 +1,22 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { AVATARS, RULES, type ClientGameView, type ClientMessage } from '@ek/shared';
+import { AVATARS, RULES, type ClientGameView, type ClientMessage, type Theme } from '@ek/shared';
 
 interface LobbyProps {
   view: ClientGameView;
   send: (msg: ClientMessage) => void;
 }
 
+/** Cosmetic card-art skins the host can choose. */
+const THEME_CHOICES: { key: Theme; emoji: string; label: string; hint: string }[] = [
+  { key: 'cats', emoji: '🐱', label: 'Cats', hint: 'The classic Exploding Kittens art.' },
+  { key: 'dogs', emoji: '🐶', label: 'Dogs', hint: 'Same game, dog card art.' },
+];
+
+/** The boolean house-rule flags (excludes the non-boolean `theme`). */
+type RuleKey = 'allowPairSteal' | 'allowTripleDemand' | 'allowFiveDifferent';
+
 /** Toggleable combo rules, with the example "5-card rule" called out. */
-const RULE_TOGGLES: { key: keyof ClientGameView['options']; label: string; hint: string }[] = [
+const RULE_TOGGLES: { key: RuleKey; label: string; hint: string }[] = [
   { key: 'allowPairSteal', label: 'Pairs', hint: 'Two matching cards → blind-steal a random card.' },
   { key: 'allowTripleDemand', label: 'Three of a kind', hint: 'Name a card and take it if they have it.' },
   {
@@ -95,6 +104,36 @@ export function Lobby({ view, send }: LobbyProps) {
                 {a}
               </button>
             ))}
+          </div>
+        </div>
+
+        <div className="rules-panel">
+          <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
+            <span style={{ fontWeight: 800 }}>🎨 Card art</span>
+            <span className="muted" style={{ fontSize: 13 }}>
+              {isHost ? 'Tap to choose' : 'Set by the host'}
+            </span>
+          </div>
+          <div className="theme-grid">
+            {THEME_CHOICES.map((t) => {
+              const on = (view.options.theme ?? 'cats') === t.key;
+              return (
+                <button
+                  key={t.key}
+                  type="button"
+                  className={`theme-pick ${on ? 'on' : ''}`}
+                  aria-pressed={on}
+                  disabled={!isHost}
+                  onClick={isHost ? () => send({ t: 'set_options', options: { theme: t.key } }) : undefined}
+                >
+                  <span className="theme-emoji" aria-hidden>
+                    {t.emoji}
+                  </span>
+                  <span className="theme-name">{t.label}</span>
+                  <span className="theme-hint">{t.hint}</span>
+                </button>
+              );
+            })}
           </div>
         </div>
 

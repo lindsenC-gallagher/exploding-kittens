@@ -4,7 +4,10 @@ A faithful, animated, realtime multiplayer clone of the **Exploding Kittens** ba
 built on the Cloudflare stack.
 
 > Rules, card names, counts, and turn flow follow the original base game. The artwork
-> is **original** cat-themed art (emoji + CSS), not the copyrighted official illustrations.
+> is **original** art (emoji + CSS), not the copyrighted official illustrations. The host
+> picks a card-art theme in the lobby — classic **cats** 🐱 or a **dogs** 🐶 skin.
+
+**▶ Play it live: https://exploding-kittens.lindsen-cruz.workers.dev/**
 
 ## Stack
 
@@ -116,3 +119,7 @@ Last kitty standing wins.
 **House rules.** In the lobby the host can toggle individual combos on/off (pair,
 three-of-a-kind, and the five-different "5-card rule"); the setting syncs to every
 player and the engine rejects a disabled combo. All default to on (the faithful base game).
+
+**Card art theme.** The host also picks a cosmetic card-art skin in the lobby — classic
+**cats** 🐱 (default) or **dogs** 🐶. It's purely visual (no rules change), syncs to every
+player, and applies across hands, piles, overlays, the log, and the help sheet.
