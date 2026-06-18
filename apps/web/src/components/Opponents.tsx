@@ -2,21 +2,14 @@ import { motion } from 'framer-motion';
 import type { ClientGameView } from '@ek/shared';
 
 /**
- * The bigger player cards, shown in turn order and rotated so the *current*
- * player always sits first (top-left) — no matter whose point of view this is.
- * The rest follow in upcoming-turn order and wrap around, with arrows between
- * cards showing the direction of play. This doubles as the turn-order display,
- * so the active player is always visible at the top.
+ * The bigger player cards, shown in fixed seat order so each player keeps the
+ * same position no matter whose turn it is or whose point of view this is. The
+ * active player is marked with a highlight + turn badge, and arrows between
+ * cards show the direction of play. This doubles as the turn-order display.
  */
 export function Opponents({ view }: { view: ClientGameView }) {
-  const players = view.players;
-  if (players.length === 0) return null;
-  // Rotate the seat array so the current player is index 0; the others trail in
-  // the order they'll take their turns. Falls back to seat order if there's no
-  // current player (e.g. before the game starts).
-  const found = players.findIndex((p) => p.id === view.currentPlayerId);
-  const start = found < 0 ? 0 : found;
-  const ordered = players.map((_, i) => players[(start + i) % players.length]);
+  const ordered = view.players;
+  if (ordered.length === 0) return null;
 
   return (
     <div className="opponents" aria-label="Players in turn order">
