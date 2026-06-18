@@ -69,7 +69,9 @@ test.describe('Exploding Kittens — house rules & log', () => {
     await host.page.getByRole('button', { name: 'Help & rules' }).click();
     await expect(host.page.getByRole('heading', { name: /How to play 🐶/ })).toBeVisible();
     // Naming follows the skin too: dog wording shows, no "cat" naming leaks.
-    await expect(host.page.getByText(/Exploding Puppy/)).toBeVisible();
+    // "Exploding Puppy" appears in more than one place (the card itself plus the
+    // Defuse wording / hand tooltips), so assert at least one is visible.
+    await expect(host.page.getByText(/Exploding Puppy/).first()).toBeVisible();
     await expect(host.page.getByText(/Dog Cards/)).toBeVisible();
     await expect(host.page.getByText(/Exploding Kitten/)).toHaveCount(0);
   });
