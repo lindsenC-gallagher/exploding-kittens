@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { AnimatePresence, Reorder, motion } from 'framer-motion';
-import { CardType, type CardType as CT, type ClientMessage } from '@ek/shared';
+import { CardType, cardNames, type CardType as CT, type ClientMessage } from '@ek/shared';
 import type { UseGameSocket } from '../hooks/useGameSocket.js';
 import { Card } from './Card.js';
+import { cardVisuals } from '../data/cardVisuals.js';
 import { Opponents } from './Opponents.js';
 import { Piles } from './Piles.js';
 import { EventLog } from './EventLog.js';
@@ -493,6 +494,12 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
                       onClick={() => toggle(c.id)}
                     />
                   </div>
+                  {/* Hover hint: what this card does. Lives on the (unrotated)
+                      hand-item so the text stays upright above the fanned card. */}
+                  <span className="card-tooltip" role="tooltip">
+                    <strong>{cardNames(view!.options.theme)[c.type]}</strong>
+                    {cardVisuals(view!.options.theme)[c.type].blurb}
+                  </span>
                 </Reorder.Item>
               );
             })}

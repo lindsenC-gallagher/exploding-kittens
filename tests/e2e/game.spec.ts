@@ -68,6 +68,30 @@ test.describe('Exploding Kittens — realtime multiplayer', () => {
     await host.page.screenshot({ path: 'test-results/game-table.png' });
   });
 
+  test('hovering a hand card reveals a tooltip describing what it does', async ({ browser }) => {
+    const host = await newPlayer(browser, 'Whiskers');
+    const guest = await newPlayer(browser, 'Mittens');
+    players = [host, guest];
+
+    const code = await hostCreateRoom(host);
+    await joinRoom(guest, code);
+    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
+    await host.page.getByRole('button', { name: /Start game/ }).click();
+    await expect(host.page.locator('.hand .hand-item')).toHaveCount(8);
+
+    // Hover the last (top-most, fully exposed) card — the fan overlaps heavily,
+    // so earlier cards' centres are covered by their neighbours.
+    const card = host.page.locator('.hand .hand-item').last();
+    const tooltip = card.locator('.card-tooltip');
+    // Hidden until hover (opacity transition, so check the computed value).
+    await expect(tooltip).toHaveCSS('opacity', '0');
+
+    await card.hover();
+
+    await expect(tooltip).toHaveCSS('opacity', '1');
+    await expect(tooltip).not.toBeEmpty();
+  });
+
   test('dragging a hand card reorders the hand (and persists)', async ({ browser }) => {
     const host = await newPlayer(browser, 'Whiskers');
     const guest = await newPlayer(browser, 'Mittens');

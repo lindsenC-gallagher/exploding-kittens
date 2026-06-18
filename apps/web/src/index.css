@@ -283,9 +283,58 @@ input:focus {
 .hand-item {
   margin: 0 -18px;
   cursor: grab;
+  position: relative;
 }
 .hand-item:active {
   cursor: grabbing;
+}
+/* Hover tooltip describing the card in hand. Anchored above the card; the
+   ~34px gap clears the card's selectable hover-lift (y: -28) so the lifted
+   card never overlaps the text. */
+.card-tooltip {
+  position: absolute;
+  bottom: calc(100% + 34px);
+  left: 50%;
+  transform: translateX(-50%) translateY(6px);
+  width: max-content;
+  max-width: 180px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(16, 10, 32, 0.96);
+  color: var(--text);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.5);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1.3;
+  text-align: center;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s ease, transform 0.15s ease;
+  z-index: 60;
+}
+.card-tooltip strong {
+  font-size: 12px;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.4px;
+  color: var(--accent-2);
+}
+.card-tooltip::after {
+  content: '';
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 6px solid transparent;
+  border-top-color: rgba(16, 10, 32, 0.96);
+}
+.hand-item:hover .card-tooltip {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
 }
 .hand .card {
   transition: box-shadow 0.15s ease;
