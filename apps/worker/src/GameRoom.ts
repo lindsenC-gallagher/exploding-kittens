@@ -238,6 +238,20 @@ export class GameRoom {
         return;
       }
 
+      case 'set_name': {
+        // Lobby-only: a player renames their own seat. Same clamp as join.
+        const p = this.game.players.find((x) => x.id === pid);
+        if (p && this.game.phase === 'lobby') {
+          const name = clampName(msg.name);
+          if (p.name !== name) {
+            p.name = name;
+            await this.persist();
+            this.broadcastViews();
+          }
+        }
+        return;
+      }
+
       case 'set_avatar': {
         // Purely cosmetic; allowed any time. Validation already confirmed the
         // avatar is one of the allowed set.

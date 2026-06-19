@@ -62,6 +62,10 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       if (typeof m.ready !== 'boolean') return null;
       return { t: 'set_ready', ready: m.ready };
 
+    case 'set_name':
+      // The name is clamped/sanitized server-side; accept any string (or none).
+      return { t: 'set_name', name: isStr(m.name) ? m.name : '' };
+
     case 'set_avatar':
       if (!isAvatar(m.avatar)) return null;
       return { t: 'set_avatar', avatar: m.avatar };

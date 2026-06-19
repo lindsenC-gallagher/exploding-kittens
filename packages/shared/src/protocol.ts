@@ -11,6 +11,8 @@ import type { ComboKind, GameEvent, GameOptions, GamePhase } from './state.js';
 export type ClientMessage =
   | { t: 'join'; name: string }
   | { t: 'set_ready'; ready: boolean }
+  /** Lobby-only: change your display name (clamped/sanitized server-side). */
+  | { t: 'set_name'; name: string }
   /** Choose your avatar (one of the shared AVATARS); cosmetic, allowed any time. */
   | { t: 'set_avatar'; avatar: string }
   /** Host-only, lobby-only: toggle one or more house rules. */

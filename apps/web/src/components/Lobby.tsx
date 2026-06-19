@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AVATARS,
@@ -8,6 +9,7 @@ import {
   type ClientMessage,
   type Theme,
 } from '@ek/shared';
+import { normalizeName, setName as persistName } from '../lib/identity.js';
 
 interface LobbyProps {
   view: ClientGameView;
@@ -38,6 +40,28 @@ export function Lobby({ view, send }: LobbyProps) {
   const me = view.players.find((p) => p.id === view.youId);
   const isHost = view.youId === view.hostId;
   const enough = view.players.length >= RULES.minPlayers;
+
+  // Editable display name (lobby-only). Mirrors the authoritative name from the
+  // view unless the field is focused, so a server clamp or rename elsewhere
+  // shows without clobbering what you're mid-typing.
+  const [nameDraft, setNameDraft] = useState(me?.name ?? '');
+  const nameFocused = useRef(false);
+  useEffect(() => {
+    if (!nameFocused.current && me?.name != null) setNameDraft(me.name);
+  }, [me?.name]);
+
+  const commitName = () => {
+    nameFocused.current = false;
+    const next = normalizeName(nameDraft);
+    if (!next) {
+      setNameDraft(me?.name ?? '');
+      return;
+    }
+    if (next !== me?.name) {
+      persistName(next);
+      send({ t: 'set_name', name: next });
+    }
+  };
 
   return (
     <div className="center-page">
@@ -95,6 +119,25 @@ export function Lobby({ view, send }: LobbyProps) {
         <p className="muted" style={{ textAlign: 'center' }}>
           {view.players.length}/{RULES.maxPlayers} players · need {RULES.minPlayers}+ to start
         </p>
+
+        <div className="stack" style={{ gap: 6, marginBottom: 14 }}>
+          <span className="muted" style={{ fontWeight: 800 }}>
+            ✏️ Your name
+          </span>
+          <input
+            value={nameDraft}
+            maxLength={20}
+            placeholder="Your name"
+            onFocus={() => {
+              nameFocused.current = true;
+            }}
+            onChange={(e) => setNameDraft(e.target.value)}
+            onBlur={commitName}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') e.currentTarget.blur();
+            }}
+          />
+        </div>
 
         <div className="avatar-panel">
           <div className="muted" style={{ fontWeight: 800, marginBottom: 8 }}>

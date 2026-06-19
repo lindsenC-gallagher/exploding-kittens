@@ -95,6 +95,13 @@ function gamePhase(stub: DurableObjectStub): Promise<string> {
   });
 }
 
+function nameOf(stub: DurableObjectStub, pid: string): Promise<string | undefined> {
+  return runInDurableObject(stub, async (_i, state) => {
+    const g = (await state.storage.get<{ players: { id: string; name: string }[] }>('game'))!;
+    return g.players.find((p) => p.id === pid)?.name;
+  });
+}
+
 describe('GameRoom play again', () => {
   it('lets only the host reset a finished game back to the lobby', async () => {
     const stub = env.GAME_ROOM.get(env.GAME_ROOM.idFromName('AGAIN1'));
@@ -121,5 +128,22 @@ describe('GameRoom play again', () => {
     await dispatchAs(stub, 'a', { t: 'play_again' });
     expect(await gamePhase(stub)).toBe('lobby');
     expect(await tokenKeys(stub)).toEqual(['a', 'b']);
+  });
+});
+
+describe('GameRoom rename', () => {
+  it('renames a seat in the lobby (clamped) but not once the game has started', async () => {
+    const stub = env.GAME_ROOM.get(env.GAME_ROOM.idFromName('RENAME1'));
+    await connect(stub, 'RENAME1', 'a'); // host
+    await connect(stub, 'RENAME1', 'b');
+
+    // In the lobby, a player can rename themselves; the name is clamped/trimmed.
+    await dispatchAs(stub, 'b', { t: 'set_name', name: '  Sir Whiskers the Third of Catington  ' });
+    expect(await nameOf(stub, 'b')).toBe('Sir Whiskers the Thi'); // trimmed + 20-char cap
+
+    // Start the game; renames are now ignored.
+    await dispatchAs(stub, 'a', { t: 'start_game' });
+    await dispatchAs(stub, 'b', { t: 'set_name', name: 'TooLate' });
+    expect(await nameOf(stub, 'b')).toBe('Sir Whiskers the Thi');
   });
 });

@@ -47,6 +47,15 @@ describe('parseClientMessage — well-formed messages', () => {
     });
   });
 
+  it('accepts set_name, coercing a missing/non-string name to empty (clamped server-side)', () => {
+    expect(parseClientMessage(j({ t: 'set_name', name: 'Mittens' }))).toEqual({
+      t: 'set_name',
+      name: 'Mittens',
+    });
+    expect(parseClientMessage(j({ t: 'set_name' }))).toEqual({ t: 'set_name', name: '' });
+    expect(parseClientMessage(j({ t: 'set_name', name: 42 }))).toEqual({ t: 'set_name', name: '' });
+  });
+
   it('accepts set_avatar with an allowed avatar and rejects anything else', () => {
     expect(parseClientMessage(j({ t: 'set_avatar', avatar: AVATARS[0] }))).toEqual({
       t: 'set_avatar',
