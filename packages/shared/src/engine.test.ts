@@ -1032,6 +1032,56 @@ describe('play again (reset to lobby)', () => {
   });
 });
 
+describe('Nope chains', () => {
+  /** Current player plays an injected single-action card (no resolve yet). */
+  function play(state: GameState, type: CardType): GameState {
+    const me = current(state).id;
+    const inj = withCardInHand(state, me, type);
+    return apply(inj.state, { type: 'play', playerId: me, cardIds: [inj.cardId] });
+  }
+  /** `pid` plays an injected Nope on the open pending action. */
+  function nope(state: GameState, pid: string): GameState {
+    const inj = withCardInHand(state, pid, CardType.Nope);
+    return apply(inj.state, { type: 'nope', playerId: pid, cardId: inj.cardId });
+  }
+
+  it('chains Skip -> Nope -> Attack -> Nope, leaving the original player on their turn', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const opp = state.players.find((p) => p.id !== me)!.id;
+
+    // Skip, Noped -> cancelled; the turn never passes.
+    state = play(state, CardType.Skip);
+    state = nope(state, opp);
+    expect(state.pending?.nopes).toBe(1);
+    state = apply(state, { type: 'resolve_pending' });
+    expect(current(state).id).toBe(me);
+    expect(state.turnsRemaining).toBe(1);
+
+    // Attack, Noped -> cancelled; still the same player's single turn.
+    state = play(state, CardType.Attack);
+    state = nope(state, opp);
+    state = apply(state, { type: 'resolve_pending' });
+    expect(current(state).id).toBe(me);
+    expect(state.turnsRemaining).toBe(1);
+  });
+
+  it('lets a Nope be Noped (a Yup), re-enabling the original action', () => {
+    let state = started(3);
+    const me = current(state).id;
+    const opp = state.players.find((p) => p.id !== me)!.id;
+
+    state = play(state, CardType.Skip);
+    state = nope(state, opp); // nopes = 1 -> would cancel
+    expect(state.pending?.nopes).toBe(1);
+    state = nope(state, me); // a Yup: nopes = 2 -> resolves after all
+    expect(state.pending?.nopes).toBe(2);
+    state = apply(state, { type: 'resolve_pending' });
+    // Skip stood: the turn passed to the next player.
+    expect(current(state).id).not.toBe(me);
+  });
+});
+
 /** Give the current player five distinct non-cat cards (top-level helper). */
 function withFiveDifferentCards(state: GameState, me: string): { state: GameState; ids: string[] } {
   const types = [

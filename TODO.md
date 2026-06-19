@@ -35,9 +35,9 @@ Backlog of ideas and improvements for the game. Grouped by theme. Unchecked item
 
 ## Bugs & verification
 
-- [ ] Double-check the shuffling algorithm.
-- [ ] Test the chain: Skip -> Nope -> Attack -> Nope.
+- [x] Double-check the shuffling algorithm.
+- [x] Test the chain: Skip -> Nope -> Attack -> Nope.
 
 ## Questions to decide
 
-- [ ] Can you Nope a Nope? Decide the rule, then support the chain if yes.
+- [x] Can you Nope a Nope? Decided: yes (the "Yup"). Already supported by the stacked-Nope engine; covered by tests.
