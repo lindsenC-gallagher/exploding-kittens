@@ -261,6 +261,7 @@ export function applyAction(
     discardPile: [...prev.discardPile],
     pending: prev.pending ? { ...prev.pending, playedCardIds: [...prev.pending.playedCardIds] } : undefined,
     awaiting: prev.awaiting ? { ...prev.awaiting } : undefined,
+    reversibleTurnPass: prev.reversibleTurnPass ? { ...prev.reversibleTurnPass } : undefined,
   };
   const events: GameEvent[] = [];
 
@@ -309,6 +310,10 @@ function handlePlay(
   const player = state.players.find((p) => p.id === action.playerId);
   if (!player || !player.alive) return { ok: false, error: 'Not an active player' };
   if (player.id !== currentPlayer(state).id) return { ok: false, error: 'Not your turn' };
+
+  // Taking any action locks in the Attack/Skip that handed you this turn — you
+  // can no longer bounce it back. (Reversing it is a Nope, routed elsewhere.)
+  state.reversibleTurnPass = undefined;
 
   const { remaining, removed } = removeCards(player.hand, action.cardIds);
   if (removed.length !== action.cardIds.length) return { ok: false, error: 'You do not hold those cards' };
@@ -419,7 +424,9 @@ function handleNope(
   action: Extract<GameAction, { type: 'nope' }>,
   events: GameEvent[],
 ): ApplyResult | null {
-  if (!state.pending) return { ok: false, error: 'Nothing to Nope' };
+  // No open window? This may still be a turn-pass reversal: the new current
+  // player Noping the Attack/Skip that just landed on them.
+  if (!state.pending) return reverseTurnPass(state, action, events);
   // The actor may not Nope their own action while it's currently set to resolve
   // (even Nope count). They MAY play a Nope as a "Yup" to counter an opponent's
   // Nope (odd count), which re-enables their action.
@@ -435,6 +442,41 @@ function handleNope(
   state.discardPile.push(card);
   state.pending.nopes += 1;
   events.push({ type: 'nope', by: player.id, nopes: state.pending.nopes });
+  return null;
+}
+
+/**
+ * Reverse a resolved Attack/Skip at the start of the new current player's turn.
+ * Only that player may do it, only before they have acted (any play/draw clears
+ * {@link GameState.reversibleTurnPass}), and only while holding a Nope. Bouncing
+ * restores the previous player's pre-action turn state exactly — they get their
+ * turn back and must now draw to end it, the spent card aside.
+ */
+function reverseTurnPass(
+  state: GameState,
+  action: Extract<GameAction, { type: 'nope' }>,
+  events: GameEvent[],
+): ApplyResult | null {
+  const rev = state.reversibleTurnPass;
+  if (!rev) return { ok: false, error: 'Nothing to Nope' };
+  if (rev.victimId !== action.playerId) return { ok: false, error: 'Only the current player can Nope that now' };
+  const player = state.players.find((p) => p.id === action.playerId);
+  if (!player || !player.alive) return { ok: false, error: 'Not an active player' };
+  const card = player.hand.find((c) => c.id === action.cardId);
+  if (!card || card.type !== CardType.Nope) return { ok: false, error: 'You have no Nope card' };
+
+  player.hand = player.hand.filter((c) => c.id !== action.cardId);
+  state.discardPile.push(card);
+
+  // Restore the previous player exactly as they were before the Attack/Skip.
+  state.currentPlayerIndex = rev.prevPlayerIndex;
+  state.turnsRemaining = rev.prevTurnsRemaining;
+  state.attacked = rev.prevAttacked;
+  state.reversibleTurnPass = undefined;
+
+  const restoredTo = state.players[rev.prevPlayerIndex];
+  events.push({ type: 'turn_pass_reversed', kind: rev.kind, reverser: player.id, restoredTo: restoredTo.id });
+  events.push({ type: 'turn_changed', playerId: restoredTo.id, turnsRemaining: state.turnsRemaining });
   return null;
 }
 
@@ -471,18 +513,47 @@ function applyEffect(
       // passes exactly 2; a player already serving attack-turns passes their
       // remaining turns + 2 (official stacking, e.g. owed 2 -> next owes 4,
       // owed 1 after taking one -> next owes 3).
+      const prevPlayerIndex = state.currentPlayerIndex;
+      const prevTurnsRemaining = state.turnsRemaining;
+      const prevAttacked = state.attacked;
       const carried = state.attacked ? state.turnsRemaining : 0;
       const nextTurns = carried + RULES.attackTurns;
       const nextIdx = nextAliveIndex(state, state.currentPlayerIndex);
       state.currentPlayerIndex = nextIdx;
       state.turnsRemaining = nextTurns;
       state.attacked = true;
+      // The victim may bounce this back at the start of their turn (see
+      // reverseTurnPass). An Attack always changes whose turn it is.
+      state.reversibleTurnPass = {
+        kind: CardType.Attack,
+        by: pending.by,
+        prevPlayerIndex,
+        prevTurnsRemaining,
+        prevAttacked,
+        victimId: state.players[nextIdx].id,
+      };
       events.push({ type: 'turn_changed', playerId: state.players[nextIdx].id, turnsRemaining: nextTurns });
       break;
     }
     case CardType.Skip: {
       // End one turn without drawing.
+      const prevPlayerIndex = state.currentPlayerIndex;
+      const prevTurnsRemaining = state.turnsRemaining;
+      const prevAttacked = state.attacked;
       endTurn(state, events);
+      // Only reversible when the Skip actually handed the turn to someone else.
+      // A Skip that just burns one of several stacked turns keeps the same
+      // player up, so there is nothing to bounce back.
+      if (state.currentPlayerIndex !== prevPlayerIndex) {
+        state.reversibleTurnPass = {
+          kind: CardType.Skip,
+          by: pending.by,
+          prevPlayerIndex,
+          prevTurnsRemaining,
+          prevAttacked,
+          victimId: currentPlayer(state).id,
+        };
+      }
       break;
     }
     case CardType.Shuffle: {
@@ -619,6 +690,10 @@ function handleDraw(
   const player = currentPlayer(state);
   if (player.id !== action.playerId) return { ok: false, error: 'Not your turn' };
   if (state.drawPile.length === 0) return { ok: false, error: 'Draw pile is empty' };
+
+  // Drawing locks in the Attack/Skip that handed you this turn — too late to
+  // bounce it back.
+  state.reversibleTurnPass = undefined;
 
   const card = state.drawPile.shift()!;
 

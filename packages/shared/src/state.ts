@@ -72,6 +72,27 @@ export interface PendingAction {
   nopes: number;
 }
 
+/**
+ * A resolved Attack or Skip that the new current player may still undo at the
+ * start of their turn (see {@link GameState.reversibleTurnPass}). Carries a
+ * snapshot of the previous player's turn state so reversal restores it exactly,
+ * as if the card had never been played (the card itself is already spent).
+ */
+export interface ReversibleTurnPass {
+  /** The card that passed the turn — Attack or Skip (for the log/undo prompt). */
+  kind: CardType;
+  /** Player who played it; the turn bounces back to them on reversal. */
+  by: string;
+  /** That player's seat index before the action, restored on reversal. */
+  prevPlayerIndex: number;
+  /** That player's outstanding turns before the action. */
+  prevTurnsRemaining: number;
+  /** That player's `attacked` flag before the action. */
+  prevAttacked: boolean;
+  /** The new current player — the only one allowed to reverse it. */
+  victimId: string;
+}
+
 /** A forced choice the game is waiting on before play can continue. */
 export type AwaitingChoice =
   | {
@@ -128,6 +149,16 @@ export interface GameState {
   discardPile: Card[];
   pending?: PendingAction;
   awaiting?: AwaitingChoice;
+  /**
+   * A turn-passing action (Attack or Skip) that has already cleared its Nope
+   * window and handed the turn to a new player. That new player — and only them
+   * — may still Nope it at the very start of their turn, before they play or
+   * draw, to bounce the turn back to whoever played it. This is a second,
+   * personal grace on top of the shared Nope window: the table froze and
+   * everyone could Nope during the window; this is the victim's last word once
+   * it has resolved onto them. Cleared the instant they take their first action.
+   */
+  reversibleTurnPass?: ReversibleTurnPass;
   winnerId?: string;
   /** Monotonic version, bumped on every applied action. */
   version: number;
@@ -139,6 +170,12 @@ export type GameEvent =
   | { type: 'cards_played'; by: string; cards: Card[]; combo?: ComboKind; target?: string }
   | { type: 'nope'; by: string; nopes: number }
   | { type: 'action_resolved'; kind: PendingAction['kind']; cancelled: boolean }
+  /**
+   * The new current player Noped a resolved Attack/Skip at the start of their
+   * turn, bouncing it back. `reverser` played the Nope; `restoredTo` got their
+   * turn back.
+   */
+  | { type: 'turn_pass_reversed'; kind: CardType; reverser: string; restoredTo: string }
   | {
       type: 'card_drawn';
       by: string;

@@ -116,6 +116,11 @@ chain, Favor, See the Future (private), Shuffle, Defuse reinsertion, and all thr
 combos (pair = steal random, triple = name & take, five different = take from discard).
 Last kitty standing wins.
 
+**Nope timing.** A played action sits in a shared 5-second Nope window (resets on each
+Nope, capped at 20s) during which anyone holding a Nope can cancel it. On top of that, an
+Attack or Skip that has already resolved onto you can still be Noped at the very start of
+your turn, before you play or draw, which bounces the turn back to the player who played it.
+
 **House rules.** In the lobby the host can toggle individual combos on/off (pair,
 three-of-a-kind, and the five-different "5-card rule"); the setting syncs to every
 player and the engine rejects a disabled combo. All default to on (the faithful base game).

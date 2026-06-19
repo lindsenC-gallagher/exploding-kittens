@@ -24,6 +24,8 @@ function describe(view: ClientGameView, e: GameEvent): string | null {
       return `🚫 Nope! (${e.nopes})`;
     case 'action_resolved':
       return e.cancelled ? '…the action was Noped.' : null;
+    case 'turn_pass_reversed':
+      return `🚫 ${nameOf(view, e.reverser)} Noped the ${cardLabel(view, e.kind)} — turn bounced back to ${nameOf(view, e.restoredTo)}`;
     case 'card_drawn':
       return `🤚 ${nameOf(view, e.by)} drew a card`;
     case 'shuffled':

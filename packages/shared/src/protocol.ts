@@ -92,6 +92,13 @@ export interface ClientGameView {
      */
     pickableAt: number;
   } | null;
+  /**
+   * Set only for the player a resolved Attack/Skip just handed the turn to,
+   * while they may still Nope it (before they play or draw) to bounce it back to
+   * whoever played it (`by`). Distinct from the shared `nope` window — this is
+   * the victim's last word once the action has resolved onto them.
+   */
+  reverseTurnPass: { kind: CardType; by: string } | null;
   winnerId: string | null;
   version: number;
 }

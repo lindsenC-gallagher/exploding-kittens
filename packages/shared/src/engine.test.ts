@@ -158,6 +158,139 @@ describe('Attack', () => {
   });
 });
 
+describe('Bounce-back Nope (reverse a resolved Attack/Skip on your turn)', () => {
+  /** Play `type` to resolution from the current player; returns the new state. */
+  function playToResolution(state: GameState, type: CardType): GameState {
+    const me = current(state).id;
+    const inj = withCardInHand(state, me, type);
+    let next = apply(inj.state, { type: 'play', playerId: me, cardIds: [inj.cardId] });
+    next = apply(next, { type: 'resolve_pending' });
+    return next;
+  }
+
+  it('lets the attacked player Nope it at the start of their turn, bouncing the turn back', () => {
+    let state = started(3);
+    const attacker = current(state).id;
+    state = playToResolution(state, CardType.Attack);
+
+    const victim = current(state).id;
+    expect(victim).not.toBe(attacker);
+    expect(state.reversibleTurnPass?.victimId).toBe(victim);
+
+    const nope = withCardInHand(state, victim, CardType.Nope);
+    state = apply(nope.state, { type: 'nope', playerId: victim, cardId: nope.cardId });
+
+    // Turn is back with the attacker, as a fresh single turn, attack cleared.
+    expect(current(state).id).toBe(attacker);
+    expect(state.turnsRemaining).toBe(1);
+    expect(state.attacked).toBe(false);
+    expect(state.reversibleTurnPass).toBeUndefined();
+    // The Nope was spent.
+    expect(player(state, victim).hand.some((c) => c.id === nope.cardId)).toBe(false);
+    expect(state.discardPile.some((c) => c.id === nope.cardId)).toBe(true);
+  });
+
+  it('lets a Skipped-to player bounce a turn-passing Skip back', () => {
+    let state = started(3);
+    const skipper = current(state).id;
+    state = playToResolution(state, CardType.Skip);
+
+    const victim = current(state).id;
+    expect(victim).not.toBe(skipper);
+    const nope = withCardInHand(state, victim, CardType.Nope);
+    state = apply(nope.state, { type: 'nope', playerId: victim, cardId: nope.cardId });
+
+    expect(current(state).id).toBe(skipper);
+    expect(state.turnsRemaining).toBe(1);
+  });
+
+  it('restores a stacked attacker exactly (still owing their turns)', () => {
+    let state = started(3);
+    state = playToResolution(state, CardType.Attack); // p1 now owes 2
+
+    const p1 = current(state).id;
+    expect(state.turnsRemaining).toBe(2);
+    state = playToResolution(state, CardType.Attack); // p1 attacks onward -> p2 owes 4
+
+    const p2 = current(state).id;
+    expect(state.turnsRemaining).toBe(4);
+    const nope = withCardInHand(state, p2, CardType.Nope);
+    state = apply(nope.state, { type: 'nope', playerId: p2, cardId: nope.cardId });
+
+    // p1 is restored exactly as before they attacked: owing 2, still attacked.
+    expect(current(state).id).toBe(p1);
+    expect(state.turnsRemaining).toBe(2);
+    expect(state.attacked).toBe(true);
+  });
+
+  it('does not offer a bounce-back when a Skip only burns one of several stacked turns', () => {
+    let state = started(3);
+    state = playToResolution(state, CardType.Attack); // p1 owes 2
+
+    const p1 = current(state).id;
+    state = playToResolution(state, CardType.Skip); // burns one of p1's two turns
+    // Same player is still up, so there is nothing to bounce.
+    expect(current(state).id).toBe(p1);
+    expect(state.turnsRemaining).toBe(1);
+    expect(state.reversibleTurnPass).toBeUndefined();
+  });
+
+  it('locks the bounce-back once the victim draws', () => {
+    let state = started(3);
+    state = playToResolution(state, CardType.Attack);
+
+    const victim = current(state).id;
+    state = apply(state, { type: 'draw', playerId: victim });
+    expect(state.reversibleTurnPass).toBeUndefined();
+
+    const nope = withCardInHand(state, victim, CardType.Nope);
+    const r = applyAction(nope.state, { type: 'nope', playerId: victim, cardId: nope.cardId });
+    expect(r.ok).toBe(false);
+  });
+
+  it('locks the bounce-back once the victim plays a (non-reversing) card', () => {
+    let state = started(3);
+    state = playToResolution(state, CardType.Attack);
+
+    const victim = current(state).id;
+    const stf = withCardInHand(state, victim, CardType.SeeTheFuture);
+    state = apply(stf.state, { type: 'play', playerId: victim, cardIds: [stf.cardId] });
+    state = apply(state, { type: 'resolve_pending' });
+    expect(state.reversibleTurnPass).toBeUndefined();
+  });
+
+  it('only the player it landed on may bounce it back', () => {
+    let state = started(3);
+    state = playToResolution(state, CardType.Attack);
+
+    const victim = current(state).id;
+    const bystander = state.players.find((p) => p.id !== victim && p.id !== state.reversibleTurnPass!.by)!.id;
+    const nope = withCardInHand(state, bystander, CardType.Nope);
+    const r = applyAction(nope.state, { type: 'nope', playerId: bystander, cardId: nope.cardId });
+    expect(r.ok).toBe(false);
+  });
+
+  it('requires a Nope card to bounce back', () => {
+    let state = started(3);
+    state = playToResolution(state, CardType.Attack);
+    const victim = current(state).id;
+    const r = applyAction(state, { type: 'nope', playerId: victim, cardId: 'no-such-card' });
+    expect(r.ok).toBe(false);
+  });
+
+  it('exposes reverseTurnPass in the view only to the player it landed on', () => {
+    let state = started(3);
+    state = playToResolution(state, CardType.Attack);
+    const victim = current(state).id;
+    const other = state.players.find((p) => p.id !== victim)!.id;
+
+    const victimView = projectView(state, 'ABCDEF', victim, null);
+    const otherView = projectView(state, 'ABCDEF', other, null);
+    expect(victimView.reverseTurnPass?.kind).toBe(CardType.Attack);
+    expect(otherView.reverseTurnPass).toBeNull();
+  });
+});
+
 describe('See the Future', () => {
   it('reveals exactly the top 3 cards without changing the deck', () => {
     let state = started(3);

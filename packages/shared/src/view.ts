@@ -71,6 +71,13 @@ export function projectView(
       : null,
     prompt,
     stealPick,
+    // Offered only to the player the Attack/Skip landed on, and only until they
+    // act: a last chance to Nope it and bounce the turn back. Everyone else
+    // just sees the normal turn.
+    reverseTurnPass:
+      state.reversibleTurnPass && state.reversibleTurnPass.victimId === recipientId
+        ? { kind: state.reversibleTurnPass.kind, by: state.reversibleTurnPass.by }
+        : null,
     winnerId: state.winnerId ?? null,
     version: state.version,
   };

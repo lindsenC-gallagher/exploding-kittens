@@ -205,6 +205,11 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
         setShowNope(true);
         playSound('nope');
         setTimeout(() => setShowNope(false), 1100);
+      } else if (e.type === 'turn_pass_reversed') {
+        // A bounce-back is a Nope too — same stamp and chime.
+        setShowNope(true);
+        playSound('nope');
+        setTimeout(() => setShowNope(false), 1100);
       } else if (e.type === 'exploded') {
         setShowBoom(true);
         playSound('explode');
@@ -384,6 +389,10 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
   // (You can still "Yup" — play a Nope when the count is odd — to counter a Nope.)
   const canNope =
     !!view.nope && !!nopeCardId && (view.nope.by !== view.youId || view.nope.nopes % 2 === 1);
+  // A resolved Attack/Skip landed on you: you may still Nope it (before you act)
+  // to bounce the turn back to whoever played it.
+  const reverse = view.reverseTurnPass;
+  const canReverse = !!reverse && !!nopeCardId;
 
   return (
     <div className="table">
@@ -529,6 +538,27 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
               onClick={() => send({ t: 'nope', cardId: nopeCardId })}
             >
               🚫 NOPE! ({Math.ceil(nopeLeft / 1000)}s)
+            </button>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Bounce-back Nope: a resolved Attack/Skip landed on you and you can
+          still cancel it, until you play or draw. */}
+      <AnimatePresence>
+        {canReverse && reverse && (
+          <motion.div
+            initial={{ scale: 0, y: 40, x: '-50%' }}
+            animate={{ scale: 1, y: 0, x: '-50%' }}
+            exit={{ scale: 0, x: '-50%' }}
+            style={{ position: 'fixed', bottom: 24, left: '50%', zIndex: 40 }}
+          >
+            <button
+              style={{ fontSize: 22, padding: '14px 26px' }}
+              onClick={() => send({ t: 'nope', cardId: nopeCardId })}
+              title={`Cancel the ${cardNames(view.options.theme)[reverse.kind]} and send the turn back to ${nameOf(reverse.by)}`}
+            >
+              🚫 NOPE the {cardNames(view.options.theme)[reverse.kind]}! (bounce it back)
             </button>
           </motion.div>
         )}

@@ -126,7 +126,7 @@ export const RULES = {
   /** Extra turns added to the next player by an Attack (stacks). */
   attackTurns: 2,
   /** Milliseconds the Nope window stays open (reset on each Nope). */
-  nopeWindowMs: 4000,
+  nopeWindowMs: 5000,
   /**
    * Grace window after a blind steal opens during which the victim may
    * rearrange their face-down hand and the thief cannot pick yet.
