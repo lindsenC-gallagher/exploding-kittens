@@ -62,6 +62,54 @@ export function ExplosionFlash({ show }: { show: boolean }) {
   );
 }
 
+/** Full-screen "defused!" celebration — the cat/dog snips the bomb's fuse. */
+export function DefuseFlash({ show }: { show: boolean }) {
+  const theme = useTheme();
+  const pet = theme === 'dogs' ? '🐶' : '🐱';
+  return (
+    <AnimatePresence>
+      {show && (
+        <motion.div className="nope-stamp" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 10 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 120 }}>
+              <motion.span
+                initial={{ x: -60, rotate: -25 }}
+                animate={{ x: [-60, 8, -6, 0], rotate: [-25, 12, -6, 0] }}
+                transition={{ duration: 0.9 }}
+              >
+                {pet}
+              </motion.span>
+              <motion.span
+                style={{ fontSize: 72 }}
+                initial={{ rotate: 0 }}
+                animate={{ rotate: [0, -35, 0, -35, 0] }}
+                transition={{ duration: 0.9 }}
+              >
+                ✂️
+              </motion.span>
+              <motion.span
+                animate={{ rotate: [0, -8, 8, -4, 0], scale: [1, 1.12, 0.9, 1], opacity: [1, 1, 1, 0.85] }}
+                transition={{ duration: 0.7 }}
+              >
+                💣
+              </motion.span>
+            </div>
+            <motion.div
+              className="title"
+              style={{ fontSize: 40 }}
+              initial={{ scale: 0.6, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              transition={{ delay: 0.5, type: 'spring', stiffness: 220, damping: 14 }}
+            >
+              🧯 Defused!
+            </motion.div>
+          </div>
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
 /** Private See the Future modal showing the top 3 cards. */
 export function SeeFutureModal({ cards, onClose }: { cards: CardModel[] | null; onClose: () => void }) {
   return (

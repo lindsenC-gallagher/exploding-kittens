@@ -10,6 +10,7 @@ import { EventLog } from './EventLog.js';
 import { MuteButton } from './MuteButton.js';
 import { playSound } from '../lib/sound.js';
 import {
+  DefuseFlash,
   DrawReveal,
   ExplosionFlash,
   FlyingCards,
@@ -50,6 +51,7 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
   const [flow, setFlow] = useState<Flow>(null);
   const [showNope, setShowNope] = useState(false);
   const [showBoom, setShowBoom] = useState(false);
+  const [showDefuse, setShowDefuse] = useState(false);
   const [nopeLeft, setNopeLeft] = useState(0);
   // A coarse clock that ticks only while a blind steal's grace window is open,
   // so the thief's picker and the victim's "rearrange" countdown stay live.
@@ -229,7 +231,9 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
       } else if (e.type === 'shuffled') {
         playSound('shuffle');
       } else if (e.type === 'defused') {
+        setShowDefuse(true);
         playSound('defuse');
+        setTimeout(() => setShowDefuse(false), 1700);
       } else if (e.type === 'game_over') {
         playSound('win');
       } else if (e.type === 'turn_changed') {
@@ -620,6 +624,7 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
       <DrawReveal reveal={drawReveal} />
       <NopeStamp show={showNope} />
       <ExplosionFlash show={showBoom} />
+      <DefuseFlash show={showDefuse} />
       <SeeFutureModal cards={seeFuture} onClose={clearSeeFuture} />
       <WinScreen view={view} send={send} onLeave={onLeave} />
       <EventLog view={view} lastEvents={lastEvents} />

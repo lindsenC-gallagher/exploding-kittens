@@ -16,7 +16,7 @@ Backlog of ideas and improvements for the game. Grouped by theme. Unchecked item
 
 ## UX & polish
 
-- [ ] Make Defuse more obvious. Consider an animation of the cat or dog (depending on theme) defusing the bomb.
+- [x] Make Defuse more obvious. Consider an animation of the cat or dog (depending on theme) defusing the bomb.
 - [x] In the game log, also include the player who played Nope.
 - [x] Add a pause so two players can't accidentally Nope at the same time.
 - [x] Give players more time to shuffle.
