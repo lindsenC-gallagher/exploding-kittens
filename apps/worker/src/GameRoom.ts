@@ -8,6 +8,7 @@ import {
   projectView,
   redactEventForRecipient,
   reorderHand,
+  resetToLobby,
   setOptions,
   startGame,
   RULES,
@@ -273,6 +274,16 @@ export class GameRoom {
         await this.persist();
         this.broadcastEvents(r.events);
         await this.settle();
+        this.broadcastViews();
+        return;
+      }
+
+      case 'play_again': {
+        // Host-only, after a game ends: return everyone to this room's lobby so
+        // the same group can play again without making a new room.
+        if (pid !== this.game.hostId || this.game.phase !== 'gameOver') return;
+        this.game = resetToLobby(this.game);
+        await this.persist();
         this.broadcastViews();
         return;
       }

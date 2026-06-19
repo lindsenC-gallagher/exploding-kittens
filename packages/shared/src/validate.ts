@@ -93,6 +93,9 @@ export function parseClientMessage(raw: string): ClientMessage | null {
     case 'start_game':
       return { t: 'start_game' };
 
+    case 'play_again':
+      return { t: 'play_again' };
+
     case 'play': {
       if (!isStrArray(m.cardIds) || m.cardIds.length === 0 || m.cardIds.length > MAX_CARDS_PER_PLAY) {
         return null;

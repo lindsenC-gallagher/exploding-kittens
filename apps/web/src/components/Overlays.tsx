@@ -1,6 +1,12 @@
 import type { CSSProperties } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { cardNames, type Card as CardModel, type ClientGameView, type ComboKind } from '@ek/shared';
+import {
+  cardNames,
+  type Card as CardModel,
+  type ClientGameView,
+  type ClientMessage,
+  type ComboKind,
+} from '@ek/shared';
 import { Card, CardBack } from './Card.js';
 import { useTheme } from '../theme.js';
 
@@ -304,11 +310,20 @@ export function DrawReveal({ reveal }: { reveal: DrawRevealData | null }) {
 }
 
 /** End-of-game winner screen. */
-export function WinScreen({ view, onLeave }: { view: ClientGameView; onLeave: () => void }) {
+export function WinScreen({
+  view,
+  send,
+  onLeave,
+}: {
+  view: ClientGameView;
+  send: (msg: ClientMessage) => void;
+  onLeave: () => void;
+}) {
   const theme = useTheme();
   if (view.phase !== 'gameOver') return null;
   const winner = view.players.find((p) => p.id === view.winnerId);
   const youWon = view.winnerId === view.youId;
+  const isHost = view.youId === view.hostId;
   const dogs = theme === 'dogs';
   return (
     <div className="overlay">
@@ -328,9 +343,16 @@ export function WinScreen({ view, onLeave }: { view: ClientGameView; onLeave: ()
         </motion.div>
         <h1 className="title">{youWon ? 'You survived!' : `${winner?.name ?? 'Someone'} wins!`}</h1>
         <p className="muted">The last {dogs ? 'pup' : 'kitty'} standing takes it all.</p>
-        <button onClick={onLeave} style={{ marginTop: 16 }}>
-          Back to home
-        </button>
+        <div className="row" style={{ justifyContent: 'center', marginTop: 16 }}>
+          {isHost ? (
+            <button onClick={() => send({ t: 'play_again' })}>🔄 Play again</button>
+          ) : (
+            <span className="muted">Waiting for the host to start a new game…</span>
+          )}
+          <button className="secondary" onClick={onLeave}>
+            Back to home
+          </button>
+        </div>
       </motion.div>
     </div>
   );

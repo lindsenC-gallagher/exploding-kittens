@@ -179,6 +179,30 @@ export function startGame(state: GameState, seed: number): ApplyResult {
   };
 }
 
+/**
+ * Return a finished game to the lobby, keeping the same players, host, and house
+ * rules so the group can play again without making a new room. All per-game
+ * state is cleared; a fresh deal happens on the next {@link startGame}. Players
+ * are marked not-ready so the lobby reflects a clean pre-game state.
+ */
+export function resetToLobby(state: GameState): GameState {
+  return {
+    ...state,
+    phase: 'lobby',
+    players: state.players.map((p) => ({ ...p, hand: [], alive: true, ready: false })),
+    currentPlayerIndex: 0,
+    turnsRemaining: 1,
+    attacked: false,
+    drawPile: [],
+    discardPile: [],
+    pending: undefined,
+    awaiting: undefined,
+    reversibleTurnPass: undefined,
+    winnerId: undefined,
+    version: state.version + 1,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------

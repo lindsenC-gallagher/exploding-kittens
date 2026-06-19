@@ -6,6 +6,7 @@ import {
   canRespondToPending,
   createLobby,
   reorderHand,
+  resetToLobby,
   setOptions,
   startGame,
   type GameAction,
@@ -1001,6 +1002,33 @@ describe('house rules (options)', () => {
       target: targetOn,
     });
     expect(rOn.ok).toBe(true);
+  });
+});
+
+describe('play again (reset to lobby)', () => {
+  it('returns a finished game to the lobby, keeping players, host, and options', () => {
+    const seeded = setOptions(lobbyWith(3), { theme: 'dogs', allowPairSteal: false });
+    const r = startGame(seeded, 7);
+    if (!r.ok) throw new Error(r.error);
+    // Force a finished game, then reset.
+    const finished: GameState = { ...r.state, phase: 'gameOver', winnerId: r.state.players[0].id };
+    const lobby = resetToLobby(finished);
+
+    expect(lobby.phase).toBe('lobby');
+    expect(lobby.winnerId).toBeUndefined();
+    expect(lobby.hostId).toBe(finished.hostId);
+    expect(lobby.players.map((p) => p.id).sort()).toEqual(finished.players.map((p) => p.id).sort());
+    // House rules carry over.
+    expect(lobby.options.theme).toBe('dogs');
+    expect(lobby.options.allowPairSteal).toBe(false);
+    // Per-player game state is cleared and players are not-ready.
+    for (const p of lobby.players) {
+      expect(p.hand).toHaveLength(0);
+      expect(p.alive).toBe(true);
+      expect(p.ready).toBe(false);
+    }
+    // The same group can immediately start again.
+    expect(startGame(lobby, 8).ok).toBe(true);
   });
 });
 

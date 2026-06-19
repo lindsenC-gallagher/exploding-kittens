@@ -10,6 +10,7 @@ describe('parseClientMessage — well-formed messages', () => {
     expect(parseClientMessage(j({ t: 'join', name: 'Cat' }))).toEqual({ t: 'join', name: 'Cat' });
     expect(parseClientMessage(j({ t: 'set_ready', ready: true }))).toEqual({ t: 'set_ready', ready: true });
     expect(parseClientMessage(j({ t: 'start_game' }))).toEqual({ t: 'start_game' });
+    expect(parseClientMessage(j({ t: 'play_again' }))).toEqual({ t: 'play_again' });
     expect(parseClientMessage(j({ t: 'draw' }))).toEqual({ t: 'draw' });
     expect(parseClientMessage(j({ t: 'leave' }))).toEqual({ t: 'leave' });
     expect(parseClientMessage(j({ t: 'nope', cardId: 'c1' }))).toEqual({ t: 'nope', cardId: 'c1' });

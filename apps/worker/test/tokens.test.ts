@@ -74,3 +74,52 @@ describe('GameRoom seat tokens', () => {
     expect(await tokenKeys(stub)).toEqual(['a', 'b']);
   });
 });
+
+/** Dispatch a client message as `pid` through the room's private handler. */
+async function dispatchAs(stub: DurableObjectStub, pid: string, msg: unknown): Promise<void> {
+  await runInDurableObject(stub, async (instance: GameRoom, state) => {
+    const ws = state.getWebSockets().find((w) => {
+      const meta = w.deserializeAttachment() as SocketMeta | null;
+      return meta?.playerId === pid;
+    });
+    await (instance as unknown as {
+      dispatch(ws: WebSocket, pid: string, msg: unknown): Promise<void>;
+    }).dispatch(ws!, pid, msg);
+  });
+}
+
+function gamePhase(stub: DurableObjectStub): Promise<string> {
+  return runInDurableObject(stub, async (_i, state) => {
+    const g = (await state.storage.get<{ phase: string }>('game'))!;
+    return g.phase;
+  });
+}
+
+describe('GameRoom play again', () => {
+  it('lets only the host reset a finished game back to the lobby', async () => {
+    const stub = env.GAME_ROOM.get(env.GAME_ROOM.idFromName('AGAIN1'));
+    await connect(stub, 'AGAIN1', 'a'); // host (first joiner)
+    await connect(stub, 'AGAIN1', 'b');
+
+    await dispatchAs(stub, 'a', { t: 'start_game' });
+    expect(await gamePhase(stub)).toBe('playing');
+
+    // Force the game to a finished state (both the live instance and storage).
+    await runInDurableObject(stub, async (instance: GameRoom, state) => {
+      const inst = instance as unknown as { game: { phase: string; winnerId?: string } };
+      inst.game.phase = 'gameOver';
+      inst.game.winnerId = 'a';
+      await state.storage.put('game', inst.game);
+    });
+    expect(await gamePhase(stub)).toBe('gameOver');
+
+    // A non-host cannot reset.
+    await dispatchAs(stub, 'b', { t: 'play_again' });
+    expect(await gamePhase(stub)).toBe('gameOver');
+
+    // The host can — back to the lobby with the same seats retained.
+    await dispatchAs(stub, 'a', { t: 'play_again' });
+    expect(await gamePhase(stub)).toBe('lobby');
+    expect(await tokenKeys(stub)).toEqual(['a', 'b']);
+  });
+});

@@ -621,7 +621,7 @@ export function GameTable({ sock, onLeave }: { sock: UseGameSocket; onLeave: () 
       <NopeStamp show={showNope} />
       <ExplosionFlash show={showBoom} />
       <SeeFutureModal cards={seeFuture} onClose={clearSeeFuture} />
-      <WinScreen view={view} onLeave={onLeave} />
+      <WinScreen view={view} send={send} onLeave={onLeave} />
       <EventLog view={view} lastEvents={lastEvents} />
     </div>
   );

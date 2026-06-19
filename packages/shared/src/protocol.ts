@@ -16,6 +16,8 @@ export type ClientMessage =
   /** Host-only, lobby-only: toggle one or more house rules. */
   | { t: 'set_options'; options: Partial<GameOptions> }
   | { t: 'start_game' }
+  /** Host-only, after a game ends: return everyone to this room's lobby to play again. */
+  | { t: 'play_again' }
   | { t: 'play'; cardIds: string[]; combo?: ComboKind; target?: string; namedCard?: CardType; discardCardId?: string }
   | { t: 'nope'; cardId: string }
   | { t: 'draw' }
