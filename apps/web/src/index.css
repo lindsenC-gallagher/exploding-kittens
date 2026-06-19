@@ -937,6 +937,98 @@ input:focus {
   box-shadow: 0 6px 0 #241c40, 0 10px 20px rgba(0, 0, 0, 0.3);
 }
 
+/* ---- spectator mode ---- */
+.spectator {
+  /* Compact cards for an at-a-glance overview of every hand and the deck. */
+  --card-w: 68px;
+  --card-h: 96px;
+  padding: 56px 16px 24px;
+  max-width: 1100px;
+  margin: 0 auto;
+}
+.spectator .card .emoji {
+  font-size: 28px;
+}
+.spectator .card .name {
+  font-size: 9px;
+  padding: 2px 3px 0;
+}
+.spectator .card .corner {
+  font-size: 11px;
+  width: 16px;
+  height: 16px;
+}
+.spectator-banner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 60;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  padding: 8px 14px;
+  font-weight: 800;
+  background: linear-gradient(180deg, var(--accent), #c23b69);
+  color: #fff;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+.spectator-note {
+  text-align: center;
+  margin: 4px 0 16px;
+}
+.spectator-players {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  justify-content: center;
+}
+.spectator-player {
+  background: var(--panel);
+  border: 1px solid var(--panel-border);
+  border-radius: 14px;
+  padding: 10px 12px;
+}
+.spectator-player.current {
+  box-shadow: 0 0 0 3px var(--accent-2), 0 0 20px rgba(93, 228, 255, 0.4);
+}
+.spectator-player.dead {
+  opacity: 0.5;
+  filter: grayscale(0.8);
+}
+.spectator-player-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+.spectator-player-name {
+  font-weight: 800;
+}
+.spectator-hand {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-height: var(--card-h);
+  align-items: center;
+}
+.spectator-deck {
+  margin-top: 22px;
+}
+.spectator-deck-row {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.spectator-deck-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+}
+
 /* ---- changelog ("what's new") ---- */
 .changelog-fab {
   position: fixed;

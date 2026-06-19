@@ -27,7 +27,7 @@ Backlog of ideas and improvements for the game. Grouped by theme. Unchecked item
 
 ## Spectator mode
 
-- [ ] Add a spectator mode that can see players' cards and the deck. Make it obvious when you are spectating.
+- [x] Add a spectator mode that can see players' cards and the deck. Make it obvious when you are spectating.
 
 ## Docs
 

@@ -16,6 +16,15 @@ async function connect(stub: DurableObjectStub, code: string, pid: string): Prom
   res.webSocket?.accept();
 }
 
+/** Open a read-only spectator socket (no seat, no token). */
+async function connectSpectator(stub: DurableObjectStub, code: string, pid: string): Promise<void> {
+  const res = await stub.fetch(`https://room/${code}/ws?pid=${pid}&name=${pid}&spectate=1`, {
+    headers: { Upgrade: 'websocket' },
+  });
+  expect(res.status).toBe(101);
+  res.webSocket?.accept();
+}
+
 /** Read the persisted per-seat token map straight out of DO storage. */
 function tokenKeys(stub: DurableObjectStub): Promise<string[]> {
   return runInDurableObject(stub, async (_instance, state) => {
@@ -187,6 +196,39 @@ describe('GameRoom Nope cooldown', () => {
       return g.pending?.nopes;
     });
     expect(nopes).toBe(1);
+  });
+});
+
+describe('GameRoom spectators', () => {
+  it('watches without taking a seat or a token', async () => {
+    const stub = env.GAME_ROOM.get(env.GAME_ROOM.idFromName('SPEC1'));
+    await connect(stub, 'SPEC1', 'a');
+    await connect(stub, 'SPEC1', 'b');
+    await dispatchAs(stub, 'a', { t: 'start_game' });
+
+    await connectSpectator(stub, 'SPEC1', 'watcher');
+
+    // The spectator is not added as a player and holds no seat token.
+    const players = await runInDurableObject(stub, async (_i, state) => {
+      const g = (await state.storage.get<{ players: { id: string }[] }>('game'))!;
+      return g.players.map((p) => p.id);
+    });
+    expect(players).toEqual(['a', 'b']);
+    expect(await tokenKeys(stub)).toEqual(['a', 'b']); // 'watcher' absent
+
+    // A frame from the spectator socket is ignored (read-only).
+    await runInDurableObject(stub, async (instance: GameRoom, state) => {
+      const sws = state.getWebSockets().find((w) => {
+        const meta = w.deserializeAttachment() as (SocketMeta & { spectator?: boolean }) | null;
+        return meta?.spectator === true;
+      });
+      expect(sws).toBeDefined();
+      await (instance as unknown as {
+        webSocketMessage(ws: WebSocket, raw: string): Promise<void>;
+      }).webSocketMessage(sws!, JSON.stringify({ t: 'set_name', name: 'hacker' }));
+    });
+    // Nothing changed.
+    expect(await gamePhase(stub)).toBe('playing');
   });
 });
 

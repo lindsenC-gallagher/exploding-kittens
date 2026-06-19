@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useGameSocket } from '../hooks/useGameSocket.js';
 import { getName, getPlayerId, normalizeName, setName as persistName } from '../lib/identity.js';
 import { Lobby } from '../components/Lobby.js';
 import { GameTable } from '../components/GameTable.js';
+import { SpectatorView } from '../components/SpectatorView.js';
 import { HelpButton } from '../components/Help.js';
 import { ChangelogButton } from '../components/Changelog.js';
 import { startMusic, stopMusic } from '../lib/sound.js';
@@ -13,9 +14,16 @@ import { ThemeContext } from '../theme.js';
 export function Room() {
   const { code = '' } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const spectate = searchParams.get('spectate') === '1';
   const pid = getPlayerId();
   const [name, setName] = useState(getName());
   const [nameInput, setNameInput] = useState('');
+
+  // Spectators watch without a seat, so they skip the name gate entirely.
+  if (spectate) {
+    return <ConnectedRoom code={code} pid={pid} name={name || 'Spectator'} spectate onLeave={() => navigate('/')} />;
+  }
 
   // Require a name before connecting.
   if (!name) {
@@ -61,14 +69,16 @@ function ConnectedRoom({
   code,
   pid,
   name,
+  spectate = false,
   onLeave,
 }: {
   code: string;
   pid: string;
   name: string;
+  spectate?: boolean;
   onLeave: () => void;
 }) {
-  const sock = useGameSocket(code, pid, name);
+  const sock = useGameSocket(code, pid, name, spectate);
 
   // Cute, theme-aware background music while in the room (silent when muted).
   const musicTheme = sock.view?.options.theme ?? 'cats';
@@ -125,7 +135,9 @@ function ConnectedRoom({
       <HelpButton view={sock.view} />
       <ChangelogButton right={116} />
 
-      {sock.view.phase === 'lobby' ? (
+      {sock.view.isSpectator ? (
+        <SpectatorView view={sock.view} onLeave={onLeave} />
+      ) : sock.view.phase === 'lobby' ? (
         <Lobby view={sock.view} send={sock.send} />
       ) : (
         <GameTable sock={sock} onLeave={onLeave} />

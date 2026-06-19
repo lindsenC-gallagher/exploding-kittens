@@ -6,6 +6,7 @@ import {
   isAvatar,
   pickAvatar,
   parseClientMessage,
+  projectSpectatorView,
   projectView,
   redactEventForRecipient,
   reorderHand,
@@ -23,6 +24,8 @@ import type { Env } from './index.js';
 
 interface SocketMeta {
   playerId: string;
+  /** True for a read-only watcher (not a seated player). */
+  spectator?: boolean;
 }
 
 /** A scheduled timer's purpose, so the alarm knows what to do when it fires. */
@@ -118,9 +121,21 @@ export class GameRoom {
     const pid = url.searchParams.get('pid');
     const token = url.searchParams.get('token') ?? '';
     const name = clampName(url.searchParams.get('name'));
+    const spectate = url.searchParams.get('spectate') === '1';
     if (!pid || pid.length > 64) return new Response('Missing pid', { status: 400 });
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('Expected websocket', { status: 426 });
+    }
+
+    // Spectators are read-only watchers: no seat, no token, no player record.
+    // They may watch at any time (lobby or in-progress) and never affect the game.
+    if (spectate) {
+      const pair = new WebSocketPair();
+      this.ctx.acceptWebSocket(pair[1]);
+      pair[1].serializeAttachment({ playerId: pid, spectator: true } satisfies SocketMeta);
+      this.sendView(pair[1]);
+      this.send(pair[1], { t: 'joined', youId: pid, roomCode: this.roomCode, token: '' });
+      return new Response(null, { status: 101, webSocket: pair[0] });
     }
 
     // Authenticate the seat. The first connection for a pid mints a secret token;
@@ -153,7 +168,7 @@ export class GameRoom {
     server.serializeAttachment({ playerId: pid } satisfies SocketMeta);
 
     await this.handleJoin(pid, name);
-    this.sendView(server, pid);
+    this.sendView(server);
     this.send(server, { t: 'joined', youId: pid, roomCode: this.roomCode, token: issuedToken });
 
     return new Response(null, { status: 101, webSocket: client });
@@ -186,6 +201,7 @@ export class GameRoom {
     if (!msg) return; // malformed / unknown frame — ignore rather than crash
     const meta = ws.deserializeAttachment() as SocketMeta | null;
     if (!meta) return;
+    if (meta.spectator) return; // read-only watcher; never mutates the game
     await this.dispatch(ws, meta.playerId, msg);
   }
 
@@ -375,7 +391,7 @@ export class GameRoom {
           Date.now() >= this.stealPickableAt
         ) {
           // Re-send the authoritative order so the client snaps back.
-          this.sendView(ws, pid);
+          this.sendView(ws);
           return;
         }
         // A private, cosmetic rearrange: it touches only this player's hand
@@ -388,7 +404,7 @@ export class GameRoom {
         // Order is private, so only this player's own sockets need the update.
         for (const s of this.sockets()) {
           const meta = s.deserializeAttachment() as SocketMeta | null;
-          if (meta?.playerId === pid) this.sendView(s, pid);
+          if (meta?.playerId === pid && !meta.spectator) this.sendView(s);
         }
         return;
       }
@@ -585,17 +601,18 @@ export class GameRoom {
     }
   }
 
-  private sendView(ws: WebSocket, pid: string): void {
-    this.send(ws, {
-      t: 'view',
-      view: projectView(this.game, this.roomCode, pid, this.nopeDeadline, this.stealPickableAt),
-    });
+  private sendView(ws: WebSocket): void {
+    const meta = ws.deserializeAttachment() as SocketMeta | null;
+    if (!meta) return;
+    const view = meta.spectator
+      ? projectSpectatorView(this.game, this.roomCode, this.nopeDeadline, this.stealPickableAt)
+      : projectView(this.game, this.roomCode, meta.playerId, this.nopeDeadline, this.stealPickableAt);
+    this.send(ws, { t: 'view', view });
   }
 
   private broadcastViews(): void {
     for (const ws of this.sockets()) {
-      const meta = ws.deserializeAttachment() as SocketMeta | null;
-      if (meta) this.sendView(ws, meta.playerId);
+      this.sendView(ws);
     }
   }
 

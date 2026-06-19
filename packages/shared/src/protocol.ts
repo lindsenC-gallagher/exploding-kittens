@@ -104,6 +104,17 @@ export interface ClientGameView {
    */
   reverseTurnPass: { kind: CardType; by: string } | null;
   winnerId: string | null;
+  /** True when this view is for a spectator (not a seated player). */
+  isSpectator: boolean;
+  /**
+   * Present only for spectators: the unredacted hands of every player and the
+   * full draw-pile order (top first). Null for seated players, who must never
+   * receive this hidden information.
+   */
+  spectator: {
+    hands: { playerId: string; cards: Card[] }[];
+    drawPile: Card[];
+  } | null;
   version: number;
 }
 

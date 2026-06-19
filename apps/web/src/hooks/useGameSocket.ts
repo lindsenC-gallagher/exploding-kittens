@@ -21,7 +21,7 @@ export interface UseGameSocket {
   clearSeeFuture: () => void;
 }
 
-export function useGameSocket(code: string, pid: string, name: string): UseGameSocket {
+export function useGameSocket(code: string, pid: string, name: string, spectate = false): UseGameSocket {
   const [connected, setConnected] = useState(false);
   const [view, setView] = useState<ClientGameView | null>(null);
   const [lastEvents, setLastEvents] = useState<GameEventEnvelope | null>(null);
@@ -36,7 +36,7 @@ export function useGameSocket(code: string, pid: string, name: string): UseGameS
   const closedByUs = useRef(false);
 
   const connect = useCallback(() => {
-    const ws = new WebSocket(roomSocketUrl(code, pid, name, getRoomToken(code)));
+    const ws = new WebSocket(roomSocketUrl(code, pid, name, getRoomToken(code), spectate));
     wsRef.current = ws;
 
     ws.onopen = () => {
@@ -92,11 +92,12 @@ export function useGameSocket(code: string, pid: string, name: string): UseGameS
           break;
         case 'joined':
           // Persist the per-seat token so reconnects authenticate to this seat.
-          setRoomToken(code, msg.token);
+          // Spectators get an empty token; don't clobber any real seat token.
+          if (msg.token) setRoomToken(code, msg.token);
           break;
       }
     };
-  }, [code, pid, name]);
+  }, [code, pid, name, spectate]);
 
   useEffect(() => {
     closedByUs.current = false;

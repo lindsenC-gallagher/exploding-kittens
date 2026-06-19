@@ -79,7 +79,32 @@ export function projectView(
         ? { kind: state.reversibleTurnPass.kind, by: state.reversibleTurnPass.by }
         : null,
     winnerId: state.winnerId ?? null,
+    isSpectator: false,
+    spectator: null,
     version: state.version,
+  };
+}
+
+/**
+ * Project an unredacted view for a spectator: every player's full hand and the
+ * entire draw-pile order are revealed. Spectators are not seated players, so
+ * `yourHand` is empty and no per-player prompts are offered. Make sure the
+ * caller only ever sends this to spectator sockets.
+ */
+export function projectSpectatorView(
+  state: GameState,
+  roomCode: string,
+  nopeDeadline: number | null,
+  stealPickableAt: number | null = null,
+): ClientGameView {
+  const base = projectView(state, roomCode, '', nopeDeadline, stealPickableAt);
+  return {
+    ...base,
+    isSpectator: true,
+    spectator: {
+      hands: state.players.map((p) => ({ playerId: p.id, cards: p.hand })),
+      drawPile: state.drawPile,
+    },
   };
 }
 

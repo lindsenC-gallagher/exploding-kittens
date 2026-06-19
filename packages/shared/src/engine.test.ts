@@ -13,7 +13,7 @@ import {
 } from './engine.js';
 import type { Card } from './cards.js';
 import { MAX_ATTACK_TURNS, MIN_ATTACK_TURNS, type GameState } from './state.js';
-import { projectView, redactEventForRecipient } from './view.js';
+import { projectSpectatorView, projectView, redactEventForRecipient } from './view.js';
 
 /** Build a lobby with `n` named players (p0..pn-1). */
 function lobbyWith(n: number): GameState {
@@ -1099,6 +1099,33 @@ function withFiveDifferentCards(state: GameState, me: string): { state: GameStat
   }
   return { state, ids };
 }
+
+describe('spectator view', () => {
+  it('reveals every hand and the full draw pile, with no seat', () => {
+    const state = started(3);
+    const view = projectSpectatorView(state, 'ABCDEF', null);
+    expect(view.isSpectator).toBe(true);
+    expect(view.yourHand).toEqual([]); // a spectator holds no cards
+    expect(view.spectator).not.toBeNull();
+    // Every player's full hand is exposed, matching the authoritative state.
+    expect(view.spectator!.hands.map((h) => h.playerId).sort()).toEqual(
+      state.players.map((p) => p.id).sort(),
+    );
+    for (const p of state.players) {
+      const revealed = view.spectator!.hands.find((h) => h.playerId === p.id)!.cards;
+      expect(revealed.map((c) => c.id)).toEqual(p.hand.map((c) => c.id));
+    }
+    // The entire draw-pile order is revealed.
+    expect(view.spectator!.drawPile.map((c) => c.id)).toEqual(state.drawPile.map((c) => c.id));
+  });
+
+  it('a normal player view never carries spectator data', () => {
+    const state = started(3);
+    const view = projectView(state, 'ABCDEF', state.players[0].id, null);
+    expect(view.isSpectator).toBe(false);
+    expect(view.spectator).toBeNull();
+  });
+});
 
 describe('draw reveal redaction', () => {
   it('attaches the drawn card for the drawer but strips it for everyone else', () => {

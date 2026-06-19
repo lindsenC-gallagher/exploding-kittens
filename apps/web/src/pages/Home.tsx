@@ -34,6 +34,11 @@ export function Home() {
     navigate(`/room/${code.trim().toUpperCase()}`);
   }
 
+  function handleWatch() {
+    if (code.trim().length < 3) return;
+    navigate(`/room/${code.trim().toUpperCase()}?spectate=1`);
+  }
+
   return (
     <div className="center-page">
       <ChangelogButton />
@@ -87,6 +92,10 @@ export function Home() {
               Join
             </button>
           </div>
+
+          <button className="ghost" disabled={code.trim().length < 3} onClick={handleWatch}>
+            👁 Watch a game (spectate)
+          </button>
 
           {error && <p className="error">{error}</p>}
         </div>
