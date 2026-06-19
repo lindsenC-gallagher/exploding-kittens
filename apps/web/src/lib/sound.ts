@@ -47,6 +47,9 @@ export function setMuted(next: boolean): void {
   } catch {
     /* storage unavailable — keep the in-memory flag */
   }
+  // Silence/resume the background music loop to match the mute state.
+  if (next) stopMusicTimer();
+  else if (musicPlaying) musicLoop();
   for (const l of listeners) l(next);
 }
 
@@ -149,4 +152,90 @@ export function playSound(name: SoundName): void {
   if (!ac) return;
   const start = ac.currentTime + 0.01;
   for (const b of RECIPES[name]) blip(ac, start, b);
+}
+
+// ---------------------------------------------------------------------------
+// Background music — a soft, synthesized loop that differs by theme. No audio
+// assets; it shares the mute state and AudioContext with the sound effects.
+// ---------------------------------------------------------------------------
+
+export type MusicTheme = 'cats' | 'dogs';
+
+interface MusicNote {
+  freq: number;
+  /** Beat length in seconds. */
+  dur: number;
+  /** Optional soft bass root played under this note. */
+  bass?: number;
+}
+
+/** Cute, gently looping melodies (soft sine notes, low gain). */
+const MELODIES: Record<MusicTheme, MusicNote[]> = {
+  // Cats: bouncy C major pentatonic.
+  cats: [
+    { freq: 523, dur: 0.3, bass: 131 },
+    { freq: 659, dur: 0.3 },
+    { freq: 784, dur: 0.3, bass: 196 },
+    { freq: 659, dur: 0.3 },
+    { freq: 880, dur: 0.3, bass: 220 },
+    { freq: 784, dur: 0.3 },
+    { freq: 659, dur: 0.3, bass: 165 },
+    { freq: 587, dur: 0.45 },
+  ],
+  // Dogs: a playful, slightly lower G-based skip.
+  dogs: [
+    { freq: 392, dur: 0.32, bass: 98 },
+    { freq: 494, dur: 0.32 },
+    { freq: 587, dur: 0.32, bass: 147 },
+    { freq: 494, dur: 0.32 },
+    { freq: 440, dur: 0.32, bass: 110 },
+    { freq: 587, dur: 0.32 },
+    { freq: 392, dur: 0.32, bass: 98 },
+    { freq: 440, dur: 0.48 },
+  ],
+};
+
+let musicTheme: MusicTheme | null = null;
+let musicTimer: ReturnType<typeof setTimeout> | null = null;
+let musicPlaying = false;
+
+/** Schedule one bar of the current melody; returns the bar length in seconds. */
+function scheduleBar(ac: AudioContext, theme: MusicTheme): number {
+  let t = ac.currentTime + 0.06;
+  const start = t;
+  for (const n of MELODIES[theme]) {
+    blip(ac, t, { freq: n.freq, dur: n.dur * 0.85, type: 'sine', gain: 0.045 });
+    if (n.bass) blip(ac, t, { freq: n.bass, dur: n.dur * 0.9, type: 'triangle', gain: 0.03 });
+    t += n.dur;
+  }
+  return t - start + 0.25; // small rest between loops
+}
+
+function musicLoop(): void {
+  if (!musicPlaying || muted || !musicTheme) return;
+  const ac = audio();
+  if (!ac) return;
+  const barLen = scheduleBar(ac, musicTheme);
+  musicTimer = setTimeout(musicLoop, barLen * 1000);
+}
+
+function stopMusicTimer(): void {
+  if (musicTimer) {
+    clearTimeout(musicTimer);
+    musicTimer = null;
+  }
+}
+
+/** Start (or retheme) the looping background music. Silent while muted. */
+export function startMusic(theme: MusicTheme): void {
+  musicTheme = theme;
+  if (musicPlaying) return; // already looping; the new theme applies next bar
+  musicPlaying = true;
+  if (!muted) musicLoop();
+}
+
+/** Stop the background music loop. */
+export function stopMusic(): void {
+  musicPlaying = false;
+  stopMusicTimer();
 }

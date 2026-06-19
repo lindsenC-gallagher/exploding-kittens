@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useGameSocket } from '../hooks/useGameSocket.js';
@@ -7,6 +7,7 @@ import { Lobby } from '../components/Lobby.js';
 import { GameTable } from '../components/GameTable.js';
 import { HelpButton } from '../components/Help.js';
 import { ChangelogButton } from '../components/Changelog.js';
+import { startMusic, stopMusic } from '../lib/sound.js';
 import { ThemeContext } from '../theme.js';
 
 export function Room() {
@@ -68,6 +69,13 @@ function ConnectedRoom({
   onLeave: () => void;
 }) {
   const sock = useGameSocket(code, pid, name);
+
+  // Cute, theme-aware background music while in the room (silent when muted).
+  const musicTheme = sock.view?.options.theme ?? 'cats';
+  useEffect(() => {
+    startMusic(musicTheme);
+    return () => stopMusic();
+  }, [musicTheme]);
 
   if (!sock.view) {
     return (

@@ -23,7 +23,7 @@ Backlog of ideas and improvements for the game. Grouped by theme. Unchecked item
 
 ## Audio & visual
 
-- [ ] Add cute background music that changes depending on the theme.
+- [x] Add cute background music that changes depending on the theme.
 
 ## Spectator mode
 
