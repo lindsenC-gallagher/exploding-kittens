@@ -21,7 +21,10 @@ function describe(view: ClientGameView, e: GameEvent): string | null {
     case 'cards_played':
       return `🃏 ${nameOf(view, e.by)} played ${e.cards.map((c) => cardNames(view.options.theme)[c.type]).join(' + ')}`;
     case 'nope':
-      return `🚫 Nope! (${e.nopes})`;
+      // Even Nopes cancel a previous Nope (a "Yup"), odd ones cancel the action.
+      return e.nopes % 2 === 0
+        ? `🙅 ${nameOf(view, e.by)} Yup'd it back on! (${e.nopes})`
+        : `🚫 ${nameOf(view, e.by)} played Nope! (${e.nopes})`;
     case 'action_resolved':
       return e.cancelled ? '…the action was Noped.' : null;
     case 'turn_pass_reversed':
