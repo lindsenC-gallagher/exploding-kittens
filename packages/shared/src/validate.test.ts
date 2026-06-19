@@ -91,6 +91,24 @@ describe('parseClientMessage — well-formed messages', () => {
       parseClientMessage(j({ t: 'set_options', options: { allowPairSteal: false, theme: 'dogs' } })),
     ).toEqual({ t: 'set_options', options: { allowPairSteal: false, theme: 'dogs' } });
   });
+
+  it('accepts the attack-stacking limit toggle and an in-range max', () => {
+    expect(parseClientMessage(j({ t: 'set_options', options: { limitAttackStacking: false } }))).toEqual({
+      t: 'set_options',
+      options: { limitAttackStacking: false },
+    });
+    expect(parseClientMessage(j({ t: 'set_options', options: { maxAttackTurns: 4 } }))).toEqual({
+      t: 'set_options',
+      options: { maxAttackTurns: 4 },
+    });
+  });
+
+  it('rejects an out-of-range or non-integer maxAttackTurns', () => {
+    expect(parseClientMessage(j({ t: 'set_options', options: { maxAttackTurns: 1 } }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'set_options', options: { maxAttackTurns: 99 } }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'set_options', options: { maxAttackTurns: 2.5 } }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'set_options', options: { maxAttackTurns: '3' } }))).toBeNull();
+  });
 });
 
 describe('parseClientMessage — malformed input is rejected (DoS hardening)', () => {

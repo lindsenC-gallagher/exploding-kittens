@@ -11,7 +11,7 @@ import {
   type GameAction,
 } from './engine.js';
 import type { Card } from './cards.js';
-import type { GameState } from './state.js';
+import { MAX_ATTACK_TURNS, MIN_ATTACK_TURNS, type GameState } from './state.js';
 import { projectView, redactEventForRecipient } from './view.js';
 
 /** Build a lobby with `n` named players (p0..pn-1). */
@@ -27,6 +27,14 @@ function lobbyWith(n: number): GameState {
 
 function started(n: number, seed = 123): GameState {
   const r = startGame(lobbyWith(n), seed);
+  expect(r.ok).toBe(true);
+  if (!r.ok) throw new Error(r.error);
+  return r.state;
+}
+
+/** Start a game with faithful (unlimited) Attack stacking for stacking tests. */
+function startedUnlimitedAttack(n: number, seed = 123): GameState {
+  const r = startGame(setOptions(lobbyWith(n), { limitAttackStacking: false }), seed);
   expect(r.ok).toBe(true);
   if (!r.ok) throw new Error(r.error);
   return r.state;
@@ -153,7 +161,7 @@ describe('Attack', () => {
   });
 
   it('stacks: an attacked player who attacks passes 4 turns onward', () => {
-    let state = started(3);
+    let state = startedUnlimitedAttack(3);
     const p0 = current(state).id;
     let inj = withCardInHand(state, p0, CardType.Attack);
     state = inj.state;
@@ -168,6 +176,48 @@ describe('Attack', () => {
     state = apply(state, { type: 'resolve_pending' });
 
     expect(current(state).id).not.toBe(p1);
+    expect(state.turnsRemaining).toBe(4);
+  });
+});
+
+describe('Attack stacking limit (house rule)', () => {
+  /** The current player plays an injected Attack and resolves it. */
+  function attackOnce(state: GameState): GameState {
+    const me = current(state).id;
+    const inj = withCardInHand(state, me, CardType.Attack);
+    const next = apply(inj.state, { type: 'play', playerId: me, cardIds: [inj.cardId] });
+    return apply(next, { type: 'resolve_pending' });
+  }
+
+  const startWith = (n: number, opts: Parameters<typeof setOptions>[1]): GameState => {
+    const r = startGame(setOptions(lobbyWith(n), opts), 123);
+    if (!r.ok) throw new Error(r.error);
+    return r.state;
+  };
+
+  it('caps chained Attacks at 2 by default (no stacking)', () => {
+    let state = started(3); // default: limit on, max 2
+    state = attackOnce(state); // fresh attack -> 2
+    expect(state.turnsRemaining).toBe(2);
+    state = attackOnce(state); // would stack to 4, capped to 2
+    expect(state.turnsRemaining).toBe(2);
+  });
+
+  it('caps at the host-chosen maximum when raised', () => {
+    let state = startWith(3, { maxAttackTurns: 4 });
+    state = attackOnce(state);
+    expect(state.turnsRemaining).toBe(2);
+    state = attackOnce(state); // 2 + 2 = 4 (at cap)
+    expect(state.turnsRemaining).toBe(4);
+    state = attackOnce(state); // 4 + 2 = 6, capped to 4
+    expect(state.turnsRemaining).toBe(4);
+  });
+
+  it('stacks without limit when the host turns the limit off', () => {
+    let state = startedUnlimitedAttack(3);
+    state = attackOnce(state);
+    expect(state.turnsRemaining).toBe(2);
+    state = attackOnce(state);
     expect(state.turnsRemaining).toBe(4);
   });
 });
@@ -219,7 +269,7 @@ describe('Bounce-back Nope (reverse a resolved Attack/Skip on your turn)', () =>
   });
 
   it('restores a stacked attacker exactly (still owing their turns)', () => {
-    let state = started(3);
+    let state = startedUnlimitedAttack(3);
     state = playToResolution(state, CardType.Attack); // p1 now owes 2
 
     const p1 = current(state).id;
@@ -567,7 +617,7 @@ describe('Exploding Kitten & Defuse', () => {
 
 describe('regression: bug fixes', () => {
   it('Attack stacks correctly after the attacked player consumes a turn (owe 1 -> next owes 3)', () => {
-    let state = started(3);
+    let state = startedUnlimitedAttack(3);
     const p0 = current(state).id;
     // p0 attacks -> p1 owes 2.
     let inj = withCardInHand(state, p0, CardType.Attack);
@@ -831,12 +881,14 @@ describe('win condition', () => {
 });
 
 describe('house rules (options)', () => {
-  it('defaults every combo to enabled and the cats theme in a fresh lobby', () => {
+  it('defaults every combo to enabled, attack-stacking capped at 2, and the cats theme', () => {
     const lobby = createLobby('p0');
     expect(lobby.options).toEqual({
       allowPairSteal: true,
       allowTripleDemand: true,
       allowFiveDifferent: true,
+      limitAttackStacking: true,
+      maxAttackTurns: MIN_ATTACK_TURNS,
       theme: 'cats',
     });
   });
@@ -858,6 +910,12 @@ describe('house rules (options)', () => {
     const r = startGame(state, 7);
     expect(r.ok).toBe(true);
     if (r.ok) expect(r.state.options.allowFiveDifferent).toBe(false);
+  });
+
+  it('clamps maxAttackTurns to the allowed bounds', () => {
+    expect(setOptions(lobbyWith(3), { maxAttackTurns: 0 }).options.maxAttackTurns).toBe(MIN_ATTACK_TURNS);
+    expect(setOptions(lobbyWith(3), { maxAttackTurns: 999 }).options.maxAttackTurns).toBe(MAX_ATTACK_TURNS);
+    expect(setOptions(lobbyWith(3), { maxAttackTurns: 5 }).options.maxAttackTurns).toBe(5);
   });
 
   it('ignores option changes once the game is in progress', () => {

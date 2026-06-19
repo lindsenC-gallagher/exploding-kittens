@@ -38,15 +38,37 @@ export interface GameOptions {
   allowTripleDemand: boolean;
   /** 5 different cards → take any card from the discard (the "5-card rule"). */
   allowFiveDifferent: boolean;
+  /**
+   * Cap how far chained Attacks can stack. When true (the default) the turns an
+   * Attack passes on are capped at {@link GameOptions.maxAttackTurns}; when false
+   * they stack without limit (the faithful base game: 2 → 4 → 6 → …).
+   */
+  limitAttackStacking: boolean;
+  /**
+   * The cap used when {@link GameOptions.limitAttackStacking} is on. At least
+   * {@link MIN_ATTACK_TURNS} (2 — a single Attack always passes 2); the host may
+   * raise it up to {@link MAX_ATTACK_TURNS} to allow deeper chains.
+   */
+  maxAttackTurns: number;
   /** Cosmetic card-art skin for the whole table. Default `cats`. */
   theme: Theme;
 }
 
-/** Faithful base-game defaults: every combo enabled, classic cat art. */
+/** Inclusive bounds for {@link GameOptions.maxAttackTurns}. */
+export const MIN_ATTACK_TURNS = 2;
+export const MAX_ATTACK_TURNS = 10;
+
+/**
+ * Defaults: every combo enabled and classic cat art (faithful), but Attack
+ * stacking is capped at 2 by default — the host can raise the cap or switch to
+ * faithful unlimited stacking in the lobby.
+ */
 export const DEFAULT_OPTIONS: GameOptions = {
   allowPairSteal: true,
   allowTripleDemand: true,
   allowFiveDifferent: true,
+  limitAttackStacking: true,
+  maxAttackTurns: MIN_ATTACK_TURNS,
   theme: 'cats',
 };
 

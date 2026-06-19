@@ -1,5 +1,13 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { AVATARS, RULES, type ClientGameView, type ClientMessage, type Theme } from '@ek/shared';
+import {
+  AVATARS,
+  MAX_ATTACK_TURNS,
+  MIN_ATTACK_TURNS,
+  RULES,
+  type ClientGameView,
+  type ClientMessage,
+  type Theme,
+} from '@ek/shared';
 
 interface LobbyProps {
   view: ClientGameView;
@@ -166,6 +174,63 @@ export function Lobby({ view, send }: LobbyProps) {
               </button>
             );
           })}
+
+          {(() => {
+            const limit = view.options.limitAttackStacking ?? false;
+            const max = view.options.maxAttackTurns ?? MIN_ATTACK_TURNS;
+            const setMax = (n: number) =>
+              send({ t: 'set_options', options: { maxAttackTurns: Math.max(MIN_ATTACK_TURNS, Math.min(MAX_ATTACK_TURNS, n)) } });
+            return (
+              <>
+                <button
+                  type="button"
+                  className="rule-toggle"
+                  disabled={!isHost}
+                  aria-pressed={limit}
+                  onClick={isHost ? () => send({ t: 'set_options', options: { limitAttackStacking: !limit } }) : undefined}
+                >
+                  <span className={`rule-switch ${limit ? 'on' : ''}`} aria-hidden>
+                    <span className="rule-knob" />
+                  </span>
+                  <span className="rule-text">
+                    <span className="rule-name">Limit Attack stacking</span>
+                    <span className="rule-hint">
+                      {limit
+                        ? `Chained Attacks cap at ${max} turns.`
+                        : 'Faithful: Attacks stack without limit (2 → 4 → 6 …).'}
+                    </span>
+                  </span>
+                  <span className={`rule-state ${limit ? 'on' : ''}`}>{limit ? 'On' : 'Off'}</span>
+                </button>
+                {limit && (
+                  <div className="rule-stepper">
+                    <span className="rule-name">Max turns</span>
+                    <div className="stepper">
+                      <button
+                        type="button"
+                        className="ghost"
+                        aria-label="Fewer max turns"
+                        disabled={!isHost || max <= MIN_ATTACK_TURNS}
+                        onClick={isHost ? () => setMax(max - 1) : undefined}
+                      >
+                        −
+                      </button>
+                      <span className="stepper-value">{max}</span>
+                      <button
+                        type="button"
+                        className="ghost"
+                        aria-label="More max turns"
+                        disabled={!isHost || max >= MAX_ATTACK_TURNS}
+                        onClick={isHost ? () => setMax(max + 1) : undefined}
+                      >
+                        +
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
 
         <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>

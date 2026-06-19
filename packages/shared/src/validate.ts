@@ -2,7 +2,7 @@ import { isAvatar } from './avatars.js';
 import { CardType } from './cards.js';
 import type { ClientMessage } from './protocol.js';
 import type { ComboKind, GameOptions, Theme } from './state.js';
-import { THEMES } from './state.js';
+import { MAX_ATTACK_TURNS, MIN_ATTACK_TURNS, THEMES } from './state.js';
 
 /**
  * Runtime validation of untrusted client messages — the trust boundary between
@@ -22,7 +22,7 @@ const MAX_CARDS_PER_PLAY = 5;
 /** Generous upper bound on a hand size for a `reorder_hand` permutation. */
 const MAX_HAND_IDS = 64;
 /** The boolean house-rule flags a client may toggle. */
-const OPTION_KEYS = ['allowPairSteal', 'allowTripleDemand', 'allowFiveDifferent'] as const;
+const OPTION_KEYS = ['allowPairSteal', 'allowTripleDemand', 'allowFiveDifferent', 'limitAttackStacking'] as const;
 const THEME_SET: ReadonlySet<string> = new Set(THEMES);
 
 function isStr(v: unknown): v is string {
@@ -75,6 +75,13 @@ export function parseClientMessage(raw: string): ClientMessage | null {
           if (typeof src[key] !== 'boolean') return null;
           options[key] = src[key] as boolean;
         }
+      }
+      if ('maxAttackTurns' in src) {
+        const v = src.maxAttackTurns;
+        if (typeof v !== 'number' || !Number.isInteger(v) || v < MIN_ATTACK_TURNS || v > MAX_ATTACK_TURNS) {
+          return null;
+        }
+        options.maxAttackTurns = v;
       }
       if ('theme' in src) {
         if (!isStr(src.theme) || !THEME_SET.has(src.theme)) return null;

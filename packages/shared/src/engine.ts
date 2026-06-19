@@ -10,6 +10,8 @@ import {
 import { createRng, shuffle } from './rng.js';
 import {
   DEFAULT_OPTIONS,
+  MAX_ATTACK_TURNS,
+  MIN_ATTACK_TURNS,
   type ApplyResult,
   type ComboKind,
   type GameEvent,
@@ -74,9 +76,13 @@ export function gameOptions(state: GameState): GameOptions {
  */
 export function setOptions(state: GameState, partial: Partial<GameOptions>): GameState {
   if (state.phase !== 'lobby') return state;
+  const merged = { ...gameOptions(state), ...partial };
+  // Keep the attack-turn cap a sane integer within bounds, whatever was sent.
+  const raw = Number.isFinite(merged.maxAttackTurns) ? Math.round(merged.maxAttackTurns) : MIN_ATTACK_TURNS;
+  merged.maxAttackTurns = Math.max(MIN_ATTACK_TURNS, Math.min(MAX_ATTACK_TURNS, raw));
   return {
     ...state,
-    options: { ...gameOptions(state), ...partial },
+    options: merged,
     version: state.version + 1,
   };
 }
@@ -522,7 +528,10 @@ function applyEffect(
       const prevTurnsRemaining = state.turnsRemaining;
       const prevAttacked = state.attacked;
       const carried = state.attacked ? state.turnsRemaining : 0;
-      const nextTurns = carried + RULES.attackTurns;
+      const opts = gameOptions(state);
+      const nextTurns = opts.limitAttackStacking
+        ? Math.min(carried + RULES.attackTurns, opts.maxAttackTurns)
+        : carried + RULES.attackTurns;
       const nextIdx = nextAliveIndex(state, state.currentPlayerIndex);
       state.currentPlayerIndex = nextIdx;
       state.turnsRemaining = nextTurns;

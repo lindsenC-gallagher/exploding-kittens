@@ -874,6 +874,35 @@ input:focus {
   color: var(--good);
 }
 
+/* Max-attack-turns stepper, shown under the "Limit Attack stacking" toggle. */
+.rule-stepper {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 12px 4px 52px;
+}
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.stepper button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border-radius: 10px;
+  font-size: 20px;
+  font-weight: 900;
+  line-height: 1;
+}
+.stepper-value {
+  min-width: 22px;
+  text-align: center;
+  font-weight: 900;
+  font-size: 16px;
+}
+
 /* Disabled combo rows in the Help reference. */
 .rule-off {
   opacity: 0.5;

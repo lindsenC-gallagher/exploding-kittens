@@ -5,7 +5,7 @@ Backlog of ideas and improvements for the game. Grouped by theme. Unchecked item
 ## Gameplay rules
 
 - [x] Randomise the player turn order. Don't base it on lobby join order, and reshuffle it every round, not just once per room.
-- [ ] Add an option to not stack Attack, so the maximum is 2 turns.
+- [x] Add an option to not stack Attack, so the maximum is 2 turns.
 - [ ] Allow more than 5 players.
 
 ## Lobby & setup
