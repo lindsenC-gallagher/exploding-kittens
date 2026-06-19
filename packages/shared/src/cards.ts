@@ -133,10 +133,16 @@ export const RULES = {
   /** Milliseconds the Nope window stays open (reset on each Nope). */
   nopeWindowMs: 5000,
   /**
-   * Grace window after a blind steal opens during which the victim may
-   * rearrange their face-down hand and the thief cannot pick yet.
+   * Brief pause after a Nope during which another Nope is ignored, so two players
+   * tapping Nope at the same moment don't accidentally stack into a Yup (which
+   * would re-enable the action). A deliberate Yup just needs a beat's wait.
    */
-  stealShuffleMs: 3000,
+  nopeCooldownMs: 800,
+  /**
+   * Grace window after a blind steal opens during which the victim may
+   * rearrange ("shuffle") their face-down hand and the thief cannot pick yet.
+   */
+  stealShuffleMs: 5000,
   /** Hard ceiling on a single Nope window no matter how many Nopes stack. */
   maxNopeWindowMs: 20000,
   /** Milliseconds before an unanswered forced choice (Favor/Defuse) auto-resolves. */

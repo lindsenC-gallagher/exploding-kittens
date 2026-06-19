@@ -1,5 +1,6 @@
 import { env, runInDurableObject } from 'cloudflare:test';
 import { describe, it, expect } from 'vitest';
+import { CardType } from '@ek/shared';
 import type { GameRoom } from '../src/GameRoom.js';
 
 type Tokens = Record<string, string>;
@@ -147,6 +148,45 @@ describe('GameRoom avatars', () => {
     const avatars = await avatarsOf(stub);
     expect(avatars).toHaveLength(3);
     expect(new Set(avatars).size).toBe(3); // all different while the set isn't exhausted
+  });
+});
+
+describe('GameRoom Nope cooldown', () => {
+  it('ignores a second Nope landing within the cooldown (no accidental Yup)', async () => {
+    const stub = env.GAME_ROOM.get(env.GAME_ROOM.idFromName('NOPECD1'));
+    await connect(stub, 'NOPECD1', 'a'); // host
+    await connect(stub, 'NOPECD1', 'b');
+    await connect(stub, 'NOPECD1', 'c');
+    await dispatchAs(stub, 'a', { t: 'start_game' });
+
+    // Force a clean pending action by 'a' and hand 'b' and 'c' a Nope each.
+    await runInDurableObject(stub, async (instance: GameRoom, state) => {
+      const inst = instance as unknown as {
+        game: {
+          pending?: unknown;
+          players: { id: string; hand: { id: string; type: string }[] }[];
+        };
+        lastNopeAt: number | null;
+      };
+      const b = inst.game.players.find((p) => p.id === 'b')!;
+      const c = inst.game.players.find((p) => p.id === 'c')!;
+      b.hand.push({ id: 'nope-b', type: CardType.Nope });
+      c.hand.push({ id: 'nope-c', type: CardType.Nope });
+      inst.game.pending = { by: 'a', kind: CardType.Attack, playedCardIds: [], nopes: 0 };
+      inst.lastNopeAt = null;
+      await state.storage.put('game', inst.game);
+    });
+
+    // Two Nopes in immediate succession (well within the cooldown): the first
+    // applies (nopes -> 1), the second is dropped, so it never becomes a Yup.
+    await dispatchAs(stub, 'b', { t: 'nope', cardId: 'nope-b' });
+    await dispatchAs(stub, 'c', { t: 'nope', cardId: 'nope-c' });
+
+    const nopes = await runInDurableObject(stub, async (_i, state) => {
+      const g = (await state.storage.get<{ pending?: { nopes: number } }>('game'))!;
+      return g.pending?.nopes;
+    });
+    expect(nopes).toBe(1);
   });
 });
 

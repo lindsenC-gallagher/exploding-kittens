@@ -71,6 +71,12 @@ export class GameRoom {
    * victim's grace window to rearrange. Null when no steal is in progress.
    */
   private stealPickableAt: number | null = null;
+  /**
+   * Epoch ms of the last applied Nope. Used for a brief cooldown so two players
+   * Noping at the same instant don't accidentally stack into a Yup. Reset when a
+   * fresh action opens its Nope window.
+   */
+  private lastNopeAt: number | null = null;
   /** Per-socket fixed-window message counters for rate limiting. */
   private msgWindows = new WeakMap<WebSocket, { count: number; start: number }>();
 
@@ -318,9 +324,16 @@ export class GameRoom {
         });
         return;
 
-      case 'nope':
-        await this.runAction(ws, { type: 'nope', playerId: pid, cardId: msg.cardId });
+      case 'nope': {
+        // Pause: ignore a Nope that lands within nopeCooldownMs of the last one,
+        // so two players tapping at once don't stack into an accidental Yup.
+        if (this.lastNopeAt !== null && Date.now() - this.lastNopeAt < RULES.nopeCooldownMs) {
+          return;
+        }
+        const applied = await this.runAction(ws, { type: 'nope', playerId: pid, cardId: msg.cardId });
+        if (applied) this.lastNopeAt = Date.now();
         return;
+      }
 
       case 'draw':
         await this.runAction(ws, { type: 'draw', playerId: pid });
@@ -389,28 +402,34 @@ export class GameRoom {
     }
   }
 
-  /** Apply an engine action from a client, then broadcast and (re)settle timers. */
+  /**
+   * Apply an engine action from a client, then broadcast and (re)settle timers.
+   * Returns true if the action was applied (false if it was illegal/invalid).
+   */
   private async runAction(
     ws: WebSocket | null,
     action: Parameters<typeof applyAction>[1],
-  ): Promise<void> {
+  ): Promise<boolean> {
     let r: ReturnType<typeof applyAction>;
     try {
       r = applyAction(this.game, action, { rngSeed: cryptoSeed() });
     } catch {
       // A malformed action must never tear down the room; treat it as illegal.
       if (ws) this.send(ws, { t: 'error', message: 'Invalid action' });
-      return;
+      return false;
     }
     if (!r.ok) {
       if (ws) this.send(ws, { t: 'error', message: r.error });
-      return;
+      return false;
     }
+    // A freshly played action opens a new Nope window — clear the prior cooldown.
+    if (action.type === 'play') this.lastNopeAt = null;
     this.game = r.state;
     await this.persist();
     this.broadcastEvents(r.events);
     await this.settle();
     this.broadcastViews();
+    return true;
   }
 
   // ---- Timers (single alarm for Nope window / awaiting / turn) -------------
