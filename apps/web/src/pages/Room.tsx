@@ -6,6 +6,7 @@ import { getName, getPlayerId, normalizeName, setName as persistName } from '../
 import { Lobby } from '../components/Lobby.js';
 import { GameTable } from '../components/GameTable.js';
 import { HelpButton } from '../components/Help.js';
+import { ChangelogButton } from '../components/Changelog.js';
 import { ThemeContext } from '../theme.js';
 
 export function Room() {
@@ -114,6 +115,7 @@ function ConnectedRoom({
       )}
 
       <HelpButton view={sock.view} />
+      <ChangelogButton right={116} />
 
       {sock.view.phase === 'lobby' ? (
         <Lobby view={sock.view} send={sock.send} />

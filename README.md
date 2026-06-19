@@ -9,6 +9,8 @@ built on the Cloudflare stack.
 
 **▶ Play it live: https://exploding-kittens.lindsen-cruz.workers.dev/**
 
+See [CHANGELOG.md](CHANGELOG.md) for the history of changes.
+
 ## Stack
 
 | Layer       | Tech                                                                 |

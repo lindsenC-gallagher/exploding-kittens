@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { createRoom } from '../lib/api.js';
 import { getName, setName as persistName } from '../lib/identity.js';
+import { ChangelogButton } from '../components/Changelog.js';
 
 export function Home() {
   const navigate = useNavigate();
@@ -35,6 +36,7 @@ export function Home() {
 
   return (
     <div className="center-page">
+      <ChangelogButton />
       <motion.div
         className="panel"
         style={{ width: 'min(440px, 100%)' }}
