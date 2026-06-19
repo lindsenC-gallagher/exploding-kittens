@@ -39,3 +39,15 @@ export function isAvatar(v: unknown): v is Avatar {
 export function defaultAvatarForIndex(index: number): Avatar {
   return AVATARS[((index % AVATARS.length) + AVATARS.length) % AVATARS.length];
 }
+
+/**
+ * Pick an avatar for a joining player, preferring ones nobody has taken yet so
+ * the table starts visually distinct. `randInt(max)` returns an integer in
+ * [0, max). Falls back to any avatar if every one is already taken.
+ */
+export function pickAvatar(taken: readonly string[], randInt: (max: number) => number): Avatar {
+  const takenSet = new Set(taken);
+  const free = AVATARS.filter((a) => !takenSet.has(a));
+  const pool = free.length > 0 ? free : AVATARS;
+  return pool[randInt(pool.length)];
+}

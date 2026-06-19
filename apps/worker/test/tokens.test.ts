@@ -131,6 +131,25 @@ describe('GameRoom play again', () => {
   });
 });
 
+function avatarsOf(stub: DurableObjectStub): Promise<string[]> {
+  return runInDurableObject(stub, async (_i, state) => {
+    const g = (await state.storage.get<{ players: { avatar: string }[] }>('game'))!;
+    return g.players.map((p) => p.avatar);
+  });
+}
+
+describe('GameRoom avatars', () => {
+  it('gives each joining player a distinct avatar (prefers unused)', async () => {
+    const stub = env.GAME_ROOM.get(env.GAME_ROOM.idFromName('AVATARS1'));
+    await connect(stub, 'AVATARS1', 'a');
+    await connect(stub, 'AVATARS1', 'b');
+    await connect(stub, 'AVATARS1', 'c');
+    const avatars = await avatarsOf(stub);
+    expect(avatars).toHaveLength(3);
+    expect(new Set(avatars).size).toBe(3); // all different while the set isn't exhausted
+  });
+});
+
 describe('GameRoom rename', () => {
   it('renames a seat in the lobby (clamped) but not once the game has started', async () => {
     const stub = env.GAME_ROOM.get(env.GAME_ROOM.idFromName('RENAME1'));

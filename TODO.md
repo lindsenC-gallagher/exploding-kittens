@@ -12,7 +12,7 @@ Backlog of ideas and improvements for the game. Grouped by theme. Unchecked item
 
 - [x] Allow the host to start a new game without creating a new lobby.
 - [x] Allow changing your name after joining, while in the lobby, but not during the game.
-- [ ] Randomise the emoji pick after a player joins, preferring emojis nobody has picked yet.
+- [x] Randomise the emoji pick after a player joins, preferring emojis nobody has picked yet.
 
 ## UX & polish
 

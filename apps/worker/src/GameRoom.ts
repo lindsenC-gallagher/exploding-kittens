@@ -4,6 +4,7 @@ import {
   canRespondToPending,
   createLobby,
   isAvatar,
+  pickAvatar,
   parseClientMessage,
   projectView,
   redactEventForRecipient,
@@ -160,7 +161,10 @@ export class GameRoom {
       existing.connected = true;
       if (name && existing.name !== name && this.game.phase === 'lobby') existing.name = name;
     } else if (this.game.phase === 'lobby') {
-      const r = addPlayer(this.game, pid, name);
+      // Give the new seat a random avatar, preferring ones nobody has yet.
+      const taken = this.game.players.map((p) => p.avatar);
+      const avatar = pickAvatar(taken, (max) => cryptoSeed() % max);
+      const r = addPlayer(this.game, pid, name, avatar);
       if (r.ok) this.game = r.state;
     }
     await this.persist();

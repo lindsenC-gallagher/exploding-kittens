@@ -1,4 +1,4 @@
-import { defaultAvatarForIndex } from './avatars.js';
+import { defaultAvatarForIndex, isAvatar } from './avatars.js';
 import {
   BASE_DECK_COMPOSITION,
   CardType,
@@ -98,14 +98,14 @@ export function setOptions(state: GameState, partial: Partial<GameOptions>): Gam
   };
 }
 
-export function addPlayer(state: GameState, id: string, name: string): ApplyResult {
+export function addPlayer(state: GameState, id: string, name: string, avatar?: string): ApplyResult {
   if (state.phase !== 'lobby') return { ok: false, error: 'Game already started' };
   if (state.players.some((p) => p.id === id)) return { ok: false, error: 'Already joined' };
   if (state.players.length >= RULES.maxPlayers) return { ok: false, error: 'Lobby full' };
   const player: PlayerState = {
     id,
     name,
-    avatar: defaultAvatarForIndex(state.players.length),
+    avatar: avatar && isAvatar(avatar) ? avatar : defaultAvatarForIndex(state.players.length),
     hand: [],
     alive: true,
     connected: true,
