@@ -131,13 +131,18 @@ export function startGame(state: GameState, seed: number): ApplyResult {
 
   deck = shuffle(deck, rng);
 
-  const order = players.map((p) => p.id);
+  // Randomise the seating so turn order isn't the lobby join order. This runs on
+  // every game start (a fresh shuffle per round), not once per room. Shuffled
+  // after the deck so the deck composition stays identical for a given seed.
+  const seated = shuffle(players, rng);
+
+  const order = seated.map((p) => p.id);
   return {
     ok: true,
     state: {
       ...state,
       phase: 'playing',
-      players,
+      players: seated,
       drawPile: deck,
       discardPile: [],
       currentPlayerIndex: 0,

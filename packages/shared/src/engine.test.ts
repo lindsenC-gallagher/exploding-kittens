@@ -88,6 +88,20 @@ describe('deck composition & setup', () => {
     const a = started(4, 999);
     const b = started(4, 999);
     expect(a.drawPile.map((c) => c.type)).toEqual(b.drawPile.map((c) => c.type));
+    // Seating is part of setup, so it's deterministic for a seed too.
+    expect(a.players.map((p) => p.id)).toEqual(b.players.map((p) => p.id));
+  });
+
+  it('randomises the seating instead of using lobby join order', () => {
+    const joinOrder = lobbyWith(4).players.map((p) => p.id);
+    // The same players are seated for a game — just (usually) reordered.
+    const s = started(4, 999);
+    expect([...s.players.map((p) => p.id)].sort()).toEqual([...joinOrder].sort());
+    // Across many seeds the start order is not always the lobby join order, and
+    // it isn't fixed to one permutation either (a fresh shuffle per game).
+    const orders = Array.from({ length: 25 }, (_, i) => started(4, i + 1).players.map((p) => p.id).join(','));
+    expect(orders.some((o) => o !== joinOrder.join(','))).toBe(true);
+    expect(new Set(orders).size).toBeGreaterThan(1);
   });
 
   it('rejects starting with fewer than 2 players', () => {
@@ -468,6 +482,11 @@ describe('combos', () => {
     const c3 = withCardInHand(state, me, CardType.BeardCat);
     state = c3.state;
 
+    const countShuffle = (s: GameState, id: string) =>
+      player(s, id).hand.filter((c) => c.type === CardType.Shuffle).length;
+    const meBefore = countShuffle(state, me);
+    const targetBefore = countShuffle(state, target);
+
     state = apply(state, {
       type: 'play',
       playerId: me,
@@ -477,7 +496,9 @@ describe('combos', () => {
       namedCard: CardType.Shuffle,
     });
     state = apply(state, { type: 'resolve_pending' });
-    expect(player(state, me).hand.some((c) => c.id === targetCard.cardId)).toBe(true);
+    // A named Shuffle moved from the target into my hand.
+    expect(countShuffle(state, me)).toBe(meBefore + 1);
+    expect(countShuffle(state, target)).toBe(targetBefore - 1);
   });
 });
 
