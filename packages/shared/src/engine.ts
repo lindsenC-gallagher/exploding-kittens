@@ -36,14 +36,25 @@ function makeCard(type: CardType): Card {
   return { id: `c${cardCounter}`, type };
 }
 
-/** Build the base deck minus Exploding Kittens and Defuse (added during setup). */
-function buildBaseDeck(): Card[] {
+/**
+ * Build the base deck minus Exploding Kittens and Defuse (added during setup).
+ * `copies` combines that many decks — the faithful way to seat more than 5
+ * players (one deck for 2-5, two for 6-9).
+ */
+function buildBaseDeck(copies = 1): Card[] {
   const cards: Card[] = [];
-  for (const [type, count] of Object.entries(BASE_DECK_COMPOSITION)) {
-    if (type === CardType.ExplodingKitten || type === CardType.Defuse) continue;
-    for (let i = 0; i < count; i++) cards.push(makeCard(type as CardType));
+  for (let c = 0; c < copies; c++) {
+    for (const [type, count] of Object.entries(BASE_DECK_COMPOSITION)) {
+      if (type === CardType.ExplodingKitten || type === CardType.Defuse) continue;
+      for (let i = 0; i < count; i++) cards.push(makeCard(type as CardType));
+    }
   }
   return cards;
+}
+
+/** How many base decks to combine for `n` players (1 for 2-5, 2 for 6-9). */
+function deckCopiesFor(n: number): number {
+  return Math.ceil(n / RULES.playersPerDeck);
 }
 
 /**
@@ -115,8 +126,12 @@ export function startGame(state: GameState, seed: number): ApplyResult {
   if (n < RULES.minPlayers) return { ok: false, error: 'Need at least 2 players' };
   if (n > RULES.maxPlayers) return { ok: false, error: 'Too many players' };
 
+  // For 6-9 players we combine two base decks (the faithful "more than 5
+  // players" rule); 2-5 players use a single deck. This is automatic, not a
+  // host option.
+  const copies = deckCopiesFor(n);
   const rng = createRng(seed);
-  let deck = shuffle(buildBaseDeck(), rng);
+  let deck = shuffle(buildBaseDeck(copies), rng);
 
   // Deal startingHandSize cards to each player, then give each one Defuse.
   const players = state.players.map((p) => ({ ...p, hand: [] as Card[], alive: true, ready: true }));
@@ -128,8 +143,9 @@ export function startGame(state: GameState, seed: number): ApplyResult {
   }
   for (const p of players) p.hand.push(makeCard(CardType.Defuse));
 
-  // Reinsert leftover Defuse cards (total 6 minus one per player) into the deck.
-  const leftoverDefuse = Math.max(0, BASE_DECK_COMPOSITION[CardType.Defuse] - n);
+  // Reinsert leftover Defuse cards (total Defuse across the combined decks minus
+  // one per player) into the deck.
+  const leftoverDefuse = Math.max(0, BASE_DECK_COMPOSITION[CardType.Defuse] * copies - n);
   for (let i = 0; i < leftoverDefuse; i++) deck.push(makeCard(CardType.Defuse));
 
   // Insert (players - 1) Exploding Kittens.

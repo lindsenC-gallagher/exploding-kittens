@@ -77,8 +77,8 @@ describe('deck composition & setup', () => {
     }
   });
 
-  it('inserts (players - 1) Exploding Kittens into the draw pile', () => {
-    for (const n of [2, 3, 4, 5]) {
+  it('inserts (players - 1) Exploding Kittens into the draw pile (2-9 players)', () => {
+    for (const n of [2, 3, 4, 5, 6, 7, 8, 9]) {
       const state = started(n);
       const eks = state.drawPile.filter((c) => c.type === CardType.ExplodingKitten).length;
       expect(eks).toBe(n - 1);
@@ -90,6 +90,27 @@ describe('deck composition & setup', () => {
     for (const p of state.players) {
       expect(p.hand.some((c) => c.type === CardType.ExplodingKitten)).toBe(false);
     }
+  });
+
+  it('combines two decks for 6-9 players so full hands and a draw pile still fit', () => {
+    for (const n of [6, 7, 8, 9]) {
+      const state = started(n);
+      for (const p of state.players) {
+        expect(p.hand.length).toBe(RULES.startingHandSize + 1);
+        expect(p.hand.some((c) => c.type === CardType.ExplodingKitten)).toBe(false);
+      }
+      // A single deck (46 cards) cannot deal 7 to 7+ players; two decks can, and
+      // still leave a healthy draw pile.
+      expect(state.drawPile.length).toBeGreaterThan(n);
+    }
+  });
+
+  it('caps the lobby at maxPlayers', () => {
+    const full = lobbyWith(RULES.maxPlayers);
+    expect(full.players).toHaveLength(RULES.maxPlayers);
+    const overflow = addPlayer(full, 'extra', 'Extra');
+    expect(overflow.ok).toBe(false);
+    expect(startGame(lobbyWith(RULES.maxPlayers), 1).ok).toBe(true);
   });
 
   it('is deterministic for a fixed seed', () => {
