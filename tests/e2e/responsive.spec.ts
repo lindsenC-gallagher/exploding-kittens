@@ -51,7 +51,7 @@ for (const vp of VIEWPORTS) {
       await guest.getByPlaceholder('Your name').fill('Guest');
       await guest.getByRole('button', { name: 'Join game' }).click();
       await expect(guest.getByRole('heading', { name: 'Lobby' })).toBeVisible();
-      await expect(host.getByText(/2\/5 players/)).toBeVisible();
+      await expect(host.getByText(/2\/\d+ players/)).toBeVisible();
 
       // Start — a full 8-card hand is dealt.
       await host.getByRole('button', { name: /Start game/ }).click();

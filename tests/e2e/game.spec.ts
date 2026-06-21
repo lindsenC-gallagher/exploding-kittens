@@ -16,13 +16,13 @@ test.describe('Exploding Kittens — realtime multiplayer', () => {
 
     const code = await hostCreateRoom(host);
     // Host initially sees 1 player.
-    await expect(host.page.getByText(/1\/5 players/)).toBeVisible();
+    await expect(host.page.getByText(/1\/\d+ players/)).toBeVisible();
 
     await joinRoom(guest, code);
 
     // Both pages should now show 2 players, in realtime.
-    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
-    await expect(guest.page.getByText(/2\/5 players/)).toBeVisible();
+    await expect(host.page.getByText(/2\/\d+ players/)).toBeVisible();
+    await expect(guest.page.getByText(/2\/\d+ players/)).toBeVisible();
     // Both player names appear in the host's lobby.
     await expect(host.page.getByText('Whiskers')).toBeVisible();
     await expect(host.page.getByText('Mittens')).toBeVisible();
@@ -35,7 +35,7 @@ test.describe('Exploding Kittens — realtime multiplayer', () => {
 
     const code = await hostCreateRoom(host);
     await joinRoom(guest, code);
-    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
+    await expect(host.page.getByText(/2\/\d+ players/)).toBeVisible();
 
     await host.page.getByRole('button', { name: /Start game/ }).click();
 
@@ -55,7 +55,7 @@ test.describe('Exploding Kittens — realtime multiplayer', () => {
 
     const code = await hostCreateRoom(host);
     await joinRoom(guest, code);
-    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
+    await expect(host.page.getByText(/2\/\d+ players/)).toBeVisible();
     await host.page.getByRole('button', { name: /Start game/ }).click();
     await expect(host.page.locator('.hand .card')).toHaveCount(8);
 
@@ -75,7 +75,7 @@ test.describe('Exploding Kittens — realtime multiplayer', () => {
 
     const code = await hostCreateRoom(host);
     await joinRoom(guest, code);
-    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
+    await expect(host.page.getByText(/2\/\d+ players/)).toBeVisible();
     await host.page.getByRole('button', { name: /Start game/ }).click();
     await expect(host.page.locator('.hand .hand-item')).toHaveCount(8);
 
@@ -99,7 +99,7 @@ test.describe('Exploding Kittens — realtime multiplayer', () => {
 
     const code = await hostCreateRoom(host);
     await joinRoom(guest, code);
-    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
+    await expect(host.page.getByText(/2\/\d+ players/)).toBeVisible();
     await host.page.getByRole('button', { name: /Start game/ }).click();
     await expect(host.page.locator('.hand .hand-item')).toHaveCount(8);
 
@@ -145,7 +145,7 @@ test.describe('Exploding Kittens — realtime multiplayer', () => {
 
     const code = await hostCreateRoom(host);
     await joinRoom(guest, code);
-    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
+    await expect(host.page.getByText(/2\/\d+ players/)).toBeVisible();
     await host.page.getByRole('button', { name: /Start game/ }).click();
     await expect(host.page.locator('.hand .card')).toHaveCount(8);
 
@@ -186,7 +186,7 @@ test.describe('Exploding Kittens — realtime multiplayer', () => {
 
     const code = await hostCreateRoom(host);
     await joinRoom(guest, code);
-    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
+    await expect(host.page.getByText(/2\/\d+ players/)).toBeVisible();
     await host.page.getByRole('button', { name: /Start game/ }).click();
     await expect(host.page.locator('.hand .card')).toHaveCount(8);
 

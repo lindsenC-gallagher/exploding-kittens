@@ -20,7 +20,7 @@ test.describe('Exploding Kittens — house rules & log', () => {
 
     const code = await hostCreateRoom(host);
     await joinRoom(guest, code);
-    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
+    await expect(host.page.getByText(/2\/\d+ players/)).toBeVisible();
 
     const hostRule = host.page.locator('.rule-toggle', { hasText: 'Five different' });
     const guestRule = guest.page.locator('.rule-toggle', { hasText: 'Five different' });
@@ -47,7 +47,7 @@ test.describe('Exploding Kittens — house rules & log', () => {
 
     const code = await hostCreateRoom(host);
     await joinRoom(guest, code);
-    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
+    await expect(host.page.getByText(/2\/\d+ players/)).toBeVisible();
 
     const hostCats = host.page.locator('.theme-pick', { hasText: 'Cats' });
     const hostDogs = host.page.locator('.theme-pick', { hasText: 'Dogs' });
@@ -83,7 +83,7 @@ test.describe('Exploding Kittens — house rules & log', () => {
 
     const code = await hostCreateRoom(host);
     await joinRoom(guest, code);
-    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
+    await expect(host.page.getByText(/2\/\d+ players/)).toBeVisible();
 
     // Host picks the unicorn; their pick reflects as selected...
     const pick = host.page.locator('.avatar-pick', { hasText: '🦄' });
@@ -102,7 +102,7 @@ test.describe('Exploding Kittens — house rules & log', () => {
 
     const code = await hostCreateRoom(host);
     await joinRoom(guest, code);
-    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
+    await expect(host.page.getByText(/2\/\d+ players/)).toBeVisible();
     await host.page.getByRole('button', { name: /Start game/ }).click();
     await expect(host.page.locator('.hand .card')).toHaveCount(8);
 

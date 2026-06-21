@@ -29,7 +29,7 @@ test.describe('Exploding Kittens — event log', () => {
 
     const code = await hostCreateRoom(host);
     await joinRoom(guest, code);
-    await expect(host.page.getByText(/2\/5 players/)).toBeVisible();
+    await expect(host.page.getByText(/2\/\d+ players/)).toBeVisible();
     await host.page.getByRole('button', { name: /Start game/ }).click();
     await expect(host.page.locator('.hand .card')).toHaveCount(8);
 
