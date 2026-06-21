@@ -13,6 +13,8 @@ there are no tagged releases. Entries are grouped by date instead of version.
 - The end-to-end test suite now matches the lobby player count regardless of the
   table size, so it no longer breaks when the maximum jumps from 5 to 9 players.
   No player-facing change; the deployed game was already correct.
+- The spectator unit test no longer assumes a fixed player order, so it stays
+  stable now that turn order is randomised on game start. No player-facing change.
 
 ## 2026-06-19
 

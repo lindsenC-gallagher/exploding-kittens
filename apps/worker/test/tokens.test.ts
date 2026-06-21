@@ -213,7 +213,8 @@ describe('GameRoom spectators', () => {
       const g = (await state.storage.get<{ players: { id: string }[] }>('game'))!;
       return g.players.map((p) => p.id);
     });
-    expect(players).toEqual(['a', 'b']);
+    // Turn order is randomised on game start, so compare order-independently.
+    expect([...players].sort()).toEqual(['a', 'b']);
     expect(await tokenKeys(stub)).toEqual(['a', 'b']); // 'watcher' absent
 
     // A frame from the spectator socket is ignored (read-only).
