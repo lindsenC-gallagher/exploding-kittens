@@ -17,6 +17,7 @@ import {
   RULES,
   CardType,
   type ClientMessage,
+  type SpectatorReason,
   type GameEvent,
   type GameState,
   type ServerMessage,
@@ -27,6 +28,8 @@ interface SocketMeta {
   playerId: string;
   /** True for a read-only watcher (not a seated player). */
   spectator?: boolean;
+  /** Why this watcher is spectating (drives the on-screen banner). */
+  spectatorReason?: SpectatorReason;
 }
 
 /** A scheduled timer's purpose, so the alarm knows what to do when it fires. */
@@ -123,6 +126,8 @@ export class GameRoom {
     const token = url.searchParams.get('token') ?? '';
     const name = clampName(url.searchParams.get('name'));
     let spectate = url.searchParams.get('spectate') === '1';
+    // The explicit "watch" link is just that — watching by choice.
+    let spectatorReason: SpectatorReason = 'watching';
     if (!pid || pid.length > 64) return new Response('Missing pid', { status: 400 });
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('Expected websocket', { status: 426 });
@@ -135,7 +140,10 @@ export class GameRoom {
       const isPlayer = this.game.players.some((p) => p.id === pid);
       const lobbyHasRoom =
         this.game.phase === 'lobby' && this.game.players.length < RULES.maxPlayers;
-      if (!isPlayer && !lobbyHasRoom) spectate = true;
+      if (!isPlayer && !lobbyHasRoom) {
+        spectate = true;
+        spectatorReason = this.game.phase === 'lobby' ? 'lobby-full' : 'in-progress';
+      }
     }
 
     // Spectators are read-only watchers: no seat, no token, no player record.
@@ -143,7 +151,11 @@ export class GameRoom {
     if (spectate) {
       const pair = new WebSocketPair();
       this.ctx.acceptWebSocket(pair[1]);
-      pair[1].serializeAttachment({ playerId: pid, spectator: true } satisfies SocketMeta);
+      pair[1].serializeAttachment({
+        playerId: pid,
+        spectator: true,
+        spectatorReason,
+      } satisfies SocketMeta);
       this.sendView(pair[1]);
       this.send(pair[1], { t: 'joined', youId: pid, roomCode: this.roomCode, token: '' });
       return new Response(null, { status: 101, webSocket: pair[0] });
@@ -617,10 +629,15 @@ export class GameRoom {
     const meta = ws.deserializeAttachment() as SocketMeta | null;
     if (!meta) return;
     // Read-only watchers, and seated players who've been eliminated mid-game,
-    // both get the unredacted spectator projection (all hands + the deck).
-    const spectate = meta.spectator || shouldSpectate(this.game, meta.playerId);
-    const view = spectate
-      ? projectSpectatorView(this.game, this.roomCode, this.nopeDeadline, this.stealPickableAt)
+    // both get the unredacted spectator projection (all hands + the deck), tagged
+    // with why they're watching so the UI can explain it.
+    const reason: SpectatorReason | null = meta.spectator
+      ? (meta.spectatorReason ?? 'watching')
+      : shouldSpectate(this.game, meta.playerId)
+        ? 'eliminated'
+        : null;
+    const view = reason
+      ? projectSpectatorView(this.game, this.roomCode, this.nopeDeadline, this.stealPickableAt, reason)
       : projectView(this.game, this.roomCode, meta.playerId, this.nopeDeadline, this.stealPickableAt);
     this.send(ws, { t: 'view', view });
   }

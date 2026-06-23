@@ -46,6 +46,15 @@ export interface PublicPlayer {
   isHost: boolean;
 }
 
+/**
+ * Why a viewer is watching rather than playing:
+ * - `eliminated`  — they were a seated player who got knocked out mid-game
+ * - `in-progress` — they opened a room whose game was already underway
+ * - `lobby-full`  — they opened a room whose lobby was already full
+ * - `watching`    — they chose to watch (the explicit "spectate" link)
+ */
+export type SpectatorReason = 'eliminated' | 'in-progress' | 'lobby-full' | 'watching';
+
 /** A personalized, redacted view of the game for one recipient. */
 export interface ClientGameView {
   phase: GamePhase;
@@ -108,12 +117,14 @@ export interface ClientGameView {
   isSpectator: boolean;
   /**
    * Present only for spectators: the unredacted hands of every player and the
-   * full draw-pile order (top first). Null for seated players, who must never
-   * receive this hidden information.
+   * full draw-pile order (top first), plus why this viewer is spectating (so the
+   * UI can explain it). Null for seated players, who must never receive this
+   * hidden information.
    */
   spectator: {
     hands: { playerId: string; cards: Card[] }[];
     drawPile: Card[];
+    reason: SpectatorReason;
   } | null;
   version: number;
 }

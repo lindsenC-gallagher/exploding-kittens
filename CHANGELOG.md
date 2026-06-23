@@ -16,6 +16,9 @@ there are no tagged releases. Entries are grouped by date instead of version.
   starts the next game.
 - In spectator mode the draw pile now stays face-down until you click it, so the
   deck order isn't spoiled the moment you start watching. Click again to hide it.
+- The spectator banner now explains why you're watching, for example "you're out,
+  watching till the next game" when you've been knocked out, or "this game's
+  already underway" when you join a room mid-game.
 
 ### Fixed
 

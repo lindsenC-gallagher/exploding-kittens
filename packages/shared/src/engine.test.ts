@@ -1117,6 +1117,14 @@ describe('spectator view', () => {
     }
     // The entire draw-pile order is revealed.
     expect(view.spectator!.drawPile.map((c) => c.id)).toEqual(state.drawPile.map((c) => c.id));
+    // Defaults to the explicit "watching" reason when none is given.
+    expect(view.spectator!.reason).toBe('watching');
+  });
+
+  it('carries the reason it was given (e.g. an eliminated player)', () => {
+    const state = started(3);
+    const view = projectSpectatorView(state, 'ABCDEF', null, null, 'eliminated');
+    expect(view.spectator!.reason).toBe('eliminated');
   });
 
   it('a normal player view never carries spectator data', () => {

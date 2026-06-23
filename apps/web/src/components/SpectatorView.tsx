@@ -1,7 +1,15 @@
 import { useState } from 'react';
-import { cardNames, type ClientGameView } from '@ek/shared';
+import { cardNames, type ClientGameView, type SpectatorReason } from '@ek/shared';
 import { Card, CardBack } from './Card.js';
 import { useTheme } from '../theme.js';
+
+/** Short banner clause explaining why this viewer is spectating. */
+const REASON_TEXT: Record<SpectatorReason, string> = {
+  eliminated: "you're out — watching till the next game",
+  'in-progress': "this game's already underway",
+  'lobby-full': 'the table is full',
+  watching: 'just watching',
+};
 
 /**
  * Read-only spectator screen. Shows every player's hand face-up and the full
@@ -16,12 +24,12 @@ export function SpectatorView({ view, onLeave }: { view: ClientGameView; onLeave
     view.spectator?.hands.find((h) => h.playerId === playerId)?.cards ?? [];
   const drawPile = view.spectator?.drawPile ?? [];
   const winner = view.players.find((p) => p.id === view.winnerId);
+  const reason = view.spectator?.reason ?? 'watching';
 
   return (
     <div className="spectator">
       <div className="spectator-banner">
-        👁 Spectating · room <b>{view.roomCode}</b>
-        {view.phase === 'lobby' && ' · waiting in the lobby'}
+        👁 Spectating · room <b>{view.roomCode}</b> · {REASON_TEXT[reason]}
         {view.phase === 'gameOver' && winner && ` · 🏆 ${winner.name} wins!`}
         <button className="ghost" style={{ marginLeft: 12 }} onClick={onLeave}>
           Leave

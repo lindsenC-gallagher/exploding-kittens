@@ -5,6 +5,7 @@ import type { GameRoom } from '../src/GameRoom.js';
 
 type Tokens = Record<string, string>;
 type SocketMeta = { playerId: string };
+type SpectatorMeta = SocketMeta & { spectator?: boolean; spectatorReason?: string };
 
 /** Open a (hibernatable) seat socket for `pid` on the given room's Durable Object. */
 async function connect(stub: DurableObjectStub, code: string, pid: string): Promise<void> {
@@ -249,16 +250,17 @@ describe('GameRoom spectators', () => {
     expect([...players].sort()).toEqual(['a', 'b']); // watcher never seated
     expect(await tokenKeys(stub)).toEqual(['a', 'b']); // watcher holds no token
 
-    // The watcher's socket is flagged spectator (so its frames are read-only).
-    const watcherIsSpectator = await runInDurableObject(stub, async (_i, state) => {
+    // The watcher's socket is flagged spectator (so its frames are read-only),
+    // tagged with the reason so the UI can say the game's already underway.
+    const watcherMeta = await runInDurableObject(stub, async (_i, state) => {
       const ws = state.getWebSockets().find((w) => {
-        const meta = w.deserializeAttachment() as (SocketMeta & { spectator?: boolean }) | null;
+        const meta = w.deserializeAttachment() as SpectatorMeta | null;
         return meta?.playerId === 'watcher';
       });
-      const meta = ws?.deserializeAttachment() as (SocketMeta & { spectator?: boolean }) | null;
-      return meta?.spectator === true;
+      return ws?.deserializeAttachment() as SpectatorMeta | null;
     });
-    expect(watcherIsSpectator).toBe(true);
+    expect(watcherMeta?.spectator).toBe(true);
+    expect(watcherMeta?.spectatorReason).toBe('in-progress');
   });
 });
 

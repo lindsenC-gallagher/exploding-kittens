@@ -1,7 +1,7 @@
 import { DEFAULT_AVATAR } from './avatars.js';
 import { RULES } from './cards.js';
 import { DEFAULT_OPTIONS, type GameEvent, type GameState } from './state.js';
-import type { ClientGameView, PublicPlayer } from './protocol.js';
+import type { ClientGameView, PublicPlayer, SpectatorReason } from './protocol.js';
 
 /**
  * Project the authoritative game state into a redacted, personalized view for
@@ -89,13 +89,15 @@ export function projectView(
  * Project an unredacted view for a spectator: every player's full hand and the
  * entire draw-pile order are revealed. Spectators are not seated players, so
  * `yourHand` is empty and no per-player prompts are offered. Make sure the
- * caller only ever sends this to spectator sockets.
+ * caller only ever sends this to spectator sockets. `reason` explains why this
+ * viewer is watching, so the UI can label it.
  */
 export function projectSpectatorView(
   state: GameState,
   roomCode: string,
   nopeDeadline: number | null,
   stealPickableAt: number | null = null,
+  reason: SpectatorReason = 'watching',
 ): ClientGameView {
   const base = projectView(state, roomCode, '', nopeDeadline, stealPickableAt);
   return {
@@ -104,6 +106,7 @@ export function projectSpectatorView(
     spectator: {
       hands: state.players.map((p) => ({ playerId: p.id, cards: p.hand })),
       drawPile: state.drawPile,
+      reason,
     },
   };
 }
