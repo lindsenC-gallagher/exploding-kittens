@@ -12,6 +12,7 @@ import {
   reorderHand,
   resetToLobby,
   setOptions,
+  shouldSpectate,
   startGame,
   RULES,
   CardType,
@@ -121,10 +122,20 @@ export class GameRoom {
     const pid = url.searchParams.get('pid');
     const token = url.searchParams.get('token') ?? '';
     const name = clampName(url.searchParams.get('name'));
-    const spectate = url.searchParams.get('spectate') === '1';
+    let spectate = url.searchParams.get('spectate') === '1';
     if (!pid || pid.length > 64) return new Response('Missing pid', { status: 400 });
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('Expected websocket', { status: 426 });
+    }
+
+    // Anyone who lands on a room they can't get a seat in — a game already in
+    // progress, or a full lobby — watches as a spectator instead of being turned
+    // away. Returning seated players (who hold a token) still authenticate below.
+    if (!spectate && !this.tokens[pid]) {
+      const isPlayer = this.game.players.some((p) => p.id === pid);
+      const lobbyHasRoom =
+        this.game.phase === 'lobby' && this.game.players.length < RULES.maxPlayers;
+      if (!isPlayer && !lobbyHasRoom) spectate = true;
     }
 
     // Spectators are read-only watchers: no seat, no token, no player record.
@@ -142,9 +153,10 @@ export class GameRoom {
     // every later connection MUST present it — there is no token-less "reclaim".
     // A legitimate client that loses its token also loses its pid (both live in
     // localStorage), so only an impersonator would arrive with a known pid and no
-    // token. New seats are handed out only for an open lobby, so connections that
-    // are neither a known seat nor an eligible new player are refused (no snooping
-    // on in-progress rooms, and the token map can't grow past the lobby cap).
+    // token. New seats are handed out only for an open lobby. A seat-less
+    // connection to an in-progress room has already been diverted to spectating
+    // above, so the guard below is a defensive backstop (the token map still
+    // can't grow past the lobby cap).
     const existing = this.tokens[pid];
     let issuedToken: string;
     if (existing) {
@@ -604,7 +616,10 @@ export class GameRoom {
   private sendView(ws: WebSocket): void {
     const meta = ws.deserializeAttachment() as SocketMeta | null;
     if (!meta) return;
-    const view = meta.spectator
+    // Read-only watchers, and seated players who've been eliminated mid-game,
+    // both get the unredacted spectator projection (all hands + the deck).
+    const spectate = meta.spectator || shouldSpectate(this.game, meta.playerId);
+    const view = spectate
       ? projectSpectatorView(this.game, this.roomCode, this.nopeDeadline, this.stealPickableAt)
       : projectView(this.game, this.roomCode, meta.playerId, this.nopeDeadline, this.stealPickableAt);
     this.send(ws, { t: 'view', view });

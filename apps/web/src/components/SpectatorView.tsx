@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { cardNames, type ClientGameView } from '@ek/shared';
-import { Card } from './Card.js';
+import { Card, CardBack } from './Card.js';
 import { useTheme } from '../theme.js';
 
 /**
@@ -9,6 +10,8 @@ import { useTheme } from '../theme.js';
  */
 export function SpectatorView({ view, onLeave }: { view: ClientGameView; onLeave: () => void }) {
   const theme = useTheme();
+  // The deck order is a big spoiler, so keep it face-down until clicked.
+  const [deckRevealed, setDeckRevealed] = useState(false);
   const handOf = (playerId: string) =>
     view.spectator?.hands.find((h) => h.playerId === playerId)?.cards ?? [];
   const drawPile = view.spectator?.drawPile ?? [];
@@ -57,23 +60,35 @@ export function SpectatorView({ view, onLeave }: { view: ClientGameView; onLeave
 
       {view.phase !== 'lobby' && (
         <div className="spectator-deck">
-          <div className="muted" style={{ fontWeight: 800, marginBottom: 6 }}>
-            🂠 Draw pile · {drawPile.length} cards (top first)
-          </div>
-          <div className="spectator-deck-row">
-            {drawPile.length === 0 ? (
-              <span className="muted">empty</span>
-            ) : (
-              drawPile.map((c, i) => (
-                <div key={c.id} className="spectator-deck-card" title={cardNames(theme)[c.type]}>
-                  <span className="badge" style={{ marginBottom: 4 }}>
-                    {i === 0 ? 'next' : `+${i}`}
-                  </span>
-                  <Card type={c.type} />
-                </div>
-              ))
-            )}
-          </div>
+          <button
+            className="spectator-deck-toggle"
+            aria-expanded={deckRevealed}
+            onClick={() => setDeckRevealed((v) => !v)}
+          >
+            🂠 Draw pile · {drawPile.length} cards ·{' '}
+            {deckRevealed ? 'hide order ▲' : 'reveal order ▼'}
+          </button>
+          {deckRevealed ? (
+            <div className="spectator-deck-row">
+              {drawPile.length === 0 ? (
+                <span className="muted">empty</span>
+              ) : (
+                drawPile.map((c, i) => (
+                  <div key={c.id} className="spectator-deck-card" title={cardNames(theme)[c.type]}>
+                    <span className="badge" style={{ marginBottom: 4 }}>
+                      {i === 0 ? 'next' : `+${i}`}
+                    </span>
+                    <Card type={c.type} />
+                  </div>
+                ))
+              )}
+            </div>
+          ) : (
+            <div className="spectator-deck-row" style={{ alignItems: 'center' }}>
+              <CardBack count={drawPile.length} selectable onClick={() => setDeckRevealed(true)} />
+              <span className="muted">click to peek the order (top first)</span>
+            </div>
+          )}
           {view.discardTop && (
             <div style={{ marginTop: 12 }}>
               <div className="muted" style={{ fontWeight: 800, marginBottom: 6 }}>

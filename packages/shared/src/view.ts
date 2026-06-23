@@ -109,6 +109,17 @@ export function projectSpectatorView(
 }
 
 /**
+ * Whether a seated player should now watch as a spectator: they've been
+ * eliminated (exploded) while the game is still in progress. They keep their
+ * seat — a new game deals them back in as a normal player — but for the rest of
+ * the current game they get the unredacted spectator view (every hand + the
+ * deck) in place of a dead player's empty view.
+ */
+export function shouldSpectate(state: GameState, playerId: string): boolean {
+  return state.phase === 'playing' && state.players.some((p) => p.id === playerId && !p.alive);
+}
+
+/**
  * Redact a single event for one recipient. Mirrors {@link projectView}: hidden
  * information must be stripped per-recipient and single-sourced so it can't
  * drift. Currently this hides which card a steal moved from everyone except the

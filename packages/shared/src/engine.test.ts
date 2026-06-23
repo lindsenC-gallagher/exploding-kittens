@@ -13,7 +13,7 @@ import {
 } from './engine.js';
 import type { Card } from './cards.js';
 import { MAX_ATTACK_TURNS, MIN_ATTACK_TURNS, type GameState } from './state.js';
-import { projectSpectatorView, projectView, redactEventForRecipient } from './view.js';
+import { projectSpectatorView, projectView, redactEventForRecipient, shouldSpectate } from './view.js';
 
 /** Build a lobby with `n` named players (p0..pn-1). */
 function lobbyWith(n: number): GameState {
@@ -1124,6 +1124,26 @@ describe('spectator view', () => {
     const view = projectView(state, 'ABCDEF', state.players[0].id, null);
     expect(view.isSpectator).toBe(false);
     expect(view.spectator).toBeNull();
+  });
+
+  it('an eliminated player watches as a spectator while the game is in progress', () => {
+    const state = started(3);
+    const dead = state.players[0].id;
+    expect(shouldSpectate(state, dead)).toBe(false); // still alive
+    state.players[0].alive = false;
+    expect(shouldSpectate(state, dead)).toBe(true); // exploded mid-game
+    // Living players, and unknown ids, never get the spectator view.
+    expect(shouldSpectate(state, state.players[1].id)).toBe(false);
+    expect(shouldSpectate(state, 'nobody')).toBe(false);
+  });
+
+  it('does not spectate a dead player once the game is no longer in progress', () => {
+    const state = started(3);
+    state.players[0].alive = false;
+    state.phase = 'gameOver';
+    // At game over a dead player rejoins the normal view (winner + play again),
+    // matching every other seated player.
+    expect(shouldSpectate(state, state.players[0].id)).toBe(false);
   });
 });
 

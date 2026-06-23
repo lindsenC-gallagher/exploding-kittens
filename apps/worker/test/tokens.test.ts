@@ -231,6 +231,35 @@ describe('GameRoom spectators', () => {
     // Nothing changed.
     expect(await gamePhase(stub)).toBe('playing');
   });
+
+  it('auto-spectates a seat-less join to an in-progress room (no 403)', async () => {
+    const stub = env.GAME_ROOM.get(env.GAME_ROOM.idFromName('SPEC2'));
+    await connect(stub, 'SPEC2', 'a');
+    await connect(stub, 'SPEC2', 'b');
+    await dispatchAs(stub, 'a', { t: 'start_game' });
+
+    // 'watcher' has no seat and the game is underway. Instead of a 403 they're
+    // upgraded to a read-only spectator (connect() asserts the 101 upgrade).
+    await connect(stub, 'SPEC2', 'watcher');
+
+    const players = await runInDurableObject(stub, async (_i, state) => {
+      const g = (await state.storage.get<{ players: { id: string }[] }>('game'))!;
+      return g.players.map((p) => p.id);
+    });
+    expect([...players].sort()).toEqual(['a', 'b']); // watcher never seated
+    expect(await tokenKeys(stub)).toEqual(['a', 'b']); // watcher holds no token
+
+    // The watcher's socket is flagged spectator (so its frames are read-only).
+    const watcherIsSpectator = await runInDurableObject(stub, async (_i, state) => {
+      const ws = state.getWebSockets().find((w) => {
+        const meta = w.deserializeAttachment() as (SocketMeta & { spectator?: boolean }) | null;
+        return meta?.playerId === 'watcher';
+      });
+      const meta = ws?.deserializeAttachment() as (SocketMeta & { spectator?: boolean }) | null;
+      return meta?.spectator === true;
+    });
+    expect(watcherIsSpectator).toBe(true);
+  });
 });
 
 describe('GameRoom rename', () => {

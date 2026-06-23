@@ -8,6 +8,15 @@ there are no tagged releases. Entries are grouped by date instead of version.
 
 ## [Unreleased]
 
+### Changed
+
+- You now drop into spectator mode automatically: when you're knocked out of a
+  game, and when you open a room whose game is already underway (or whose lobby is
+  full). Eliminated players keep their seat and rejoin as a player when the host
+  starts the next game.
+- In spectator mode the draw pile now stays face-down until you click it, so the
+  deck order isn't spoiled the moment you start watching. Click again to hide it.
+
 ### Fixed
 
 - The end-to-end test suite now matches the lobby player count regardless of the

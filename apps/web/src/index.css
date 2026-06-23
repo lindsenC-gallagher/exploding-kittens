@@ -1016,6 +1016,19 @@ input:focus {
 .spectator-deck {
   margin-top: 22px;
 }
+.spectator-deck-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 8px;
+  padding: 6px 12px;
+  font-weight: 800;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 10px;
+  cursor: pointer;
+  color: inherit;
+}
 .spectator-deck-row {
   display: flex;
   gap: 8px;
