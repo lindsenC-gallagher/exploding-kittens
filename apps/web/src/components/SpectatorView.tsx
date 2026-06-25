@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { cardNames, type ClientGameView, type SpectatorReason } from '@ek/shared';
+import { cardNames, type ClientGameView, type ClientMessage, type SpectatorReason } from '@ek/shared';
 import { Card, CardBack } from './Card.js';
 import { useTheme } from '../theme.js';
 
@@ -16,7 +16,15 @@ const REASON_TEXT: Record<SpectatorReason, string> = {
  * draw-pile order (data the server only sends to spectators), with an obvious
  * "Spectating" banner so it's clear you're watching, not playing.
  */
-export function SpectatorView({ view, onLeave }: { view: ClientGameView; onLeave: () => void }) {
+export function SpectatorView({
+  view,
+  send,
+  onLeave,
+}: {
+  view: ClientGameView;
+  send: (msg: ClientMessage) => void;
+  onLeave: () => void;
+}) {
   const theme = useTheme();
   // The deck order is a big spoiler, so keep it face-down until clicked.
   const [deckRevealed, setDeckRevealed] = useState(false);
@@ -25,12 +33,25 @@ export function SpectatorView({ view, onLeave }: { view: ClientGameView; onLeave
   const drawPile = view.spectator?.drawPile ?? [];
   const winner = view.players.find((p) => p.id === view.winnerId);
   const reason = view.spectator?.reason ?? 'watching';
+  // An eliminated host can still rally the table for another game without
+  // leaving the reveal. Read-only watchers have no seat, so they're never host.
+  const isHost = view.youId !== '' && view.youId === view.hostId;
+  const gameOver = view.phase === 'gameOver';
 
   return (
     <div className="spectator">
       <div className="spectator-banner">
         👁 Spectating · room <b>{view.roomCode}</b> · {REASON_TEXT[reason]}
-        {view.phase === 'gameOver' && winner && ` · 🏆 ${winner.name} wins!`}
+        {gameOver && winner && ` · 🏆 ${winner.name} wins!`}
+        {gameOver && isHost ? (
+          <button style={{ marginLeft: 12 }} onClick={() => send({ t: 'play_again' })}>
+            🔄 Play again
+          </button>
+        ) : gameOver ? (
+          <span className="muted" style={{ marginLeft: 12 }}>
+            waiting for the host to start a new game…
+          </span>
+        ) : null}
         <button className="ghost" style={{ marginLeft: 12 }} onClick={onLeave}>
           Leave
         </button>

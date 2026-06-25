@@ -87,10 +87,12 @@ export function projectView(
 
 /**
  * Project an unredacted view for a spectator: every player's full hand and the
- * entire draw-pile order are revealed. Spectators are not seated players, so
- * `yourHand` is empty and no per-player prompts are offered. Make sure the
- * caller only ever sends this to spectator sockets. `reason` explains why this
- * viewer is watching, so the UI can label it.
+ * entire draw-pile order are revealed. Read-only watchers pass no `recipientId`,
+ * so they hold no seat (`youId` empty). An eliminated seated player passes their
+ * own id, so the view still knows who they are (e.g. so a knocked-out host can
+ * start the next game from the spectator screen); their `yourHand` is empty
+ * because exploding clears the hand. `reason` explains why this viewer is
+ * watching, so the UI can label it.
  */
 export function projectSpectatorView(
   state: GameState,
@@ -98,8 +100,9 @@ export function projectSpectatorView(
   nopeDeadline: number | null,
   stealPickableAt: number | null = null,
   reason: SpectatorReason = 'watching',
+  recipientId = '',
 ): ClientGameView {
-  const base = projectView(state, roomCode, '', nopeDeadline, stealPickableAt);
+  const base = projectView(state, roomCode, recipientId, nopeDeadline, stealPickableAt);
   return {
     ...base,
     isSpectator: true,
@@ -113,13 +116,18 @@ export function projectSpectatorView(
 
 /**
  * Whether a seated player should now watch as a spectator: they've been
- * eliminated (exploded) while the game is still in progress. They keep their
- * seat — a new game deals them back in as a normal player — but for the rest of
- * the current game they get the unredacted spectator view (every hand + the
- * deck) in place of a dead player's empty view.
+ * eliminated (exploded) and the game has not returned to the lobby. They keep
+ * their seat — a new game deals them back in as a normal player — but for the
+ * rest of the current game, and on the game-over screen, they get the unredacted
+ * spectator view (every hand + the deck) in place of a dead player's empty view.
+ * This covers the player whose explosion ends the game (including any 2-player
+ * game), who would otherwise jump straight to game over with nothing to see.
  */
 export function shouldSpectate(state: GameState, playerId: string): boolean {
-  return state.phase === 'playing' && state.players.some((p) => p.id === playerId && !p.alive);
+  return (
+    (state.phase === 'playing' || state.phase === 'gameOver') &&
+    state.players.some((p) => p.id === playerId && !p.alive)
+  );
 }
 
 /**

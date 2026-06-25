@@ -1127,6 +1127,20 @@ describe('spectator view', () => {
     expect(view.spectator!.reason).toBe('eliminated');
   });
 
+  it('keeps the eliminated player\'s seat id so a knocked-out host can restart', () => {
+    const state = started(3);
+    const host = state.players.find((p) => p.id === state.hostId)!;
+    host.alive = false;
+    host.hand = []; // exploding clears the hand
+    const view = projectSpectatorView(state, 'ABCDEF', null, null, 'eliminated', host.id);
+    // The view knows who they are, so the client can offer "Play again" to a host.
+    expect(view.youId).toBe(host.id);
+    expect(view.youId).toBe(view.hostId);
+    expect(view.yourHand).toEqual([]); // still no leak of a hand they no longer hold
+    // The full reveal is unchanged.
+    expect(view.spectator!.hands.length).toBe(state.players.length);
+  });
+
   it('a normal player view never carries spectator data', () => {
     const state = started(3);
     const view = projectView(state, 'ABCDEF', state.players[0].id, null);
@@ -1145,12 +1159,23 @@ describe('spectator view', () => {
     expect(shouldSpectate(state, 'nobody')).toBe(false);
   });
 
-  it('does not spectate a dead player once the game is no longer in progress', () => {
+  it('keeps spectating a dead player on the game-over screen', () => {
     const state = started(3);
     state.players[0].alive = false;
     state.phase = 'gameOver';
-    // At game over a dead player rejoins the normal view (winner + play again),
-    // matching every other seated player.
+    state.winnerId = state.players[1].id;
+    // The player whose explosion ended the game (and any 2-player loser) still
+    // gets the full reveal at game over, rather than an empty view.
+    expect(shouldSpectate(state, state.players[0].id)).toBe(true);
+    // The surviving winner is not a spectator — they get the normal win screen.
+    expect(shouldSpectate(state, state.players[1].id)).toBe(false);
+  });
+
+  it('stops spectating once the room returns to the lobby', () => {
+    const state = started(3);
+    state.players[0].alive = false;
+    state.phase = 'lobby';
+    // A new game deals everyone back in as normal players.
     expect(shouldSpectate(state, state.players[0].id)).toBe(false);
   });
 });

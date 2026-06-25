@@ -22,6 +22,11 @@ there are no tagged releases. Entries are grouped by date instead of version.
 
 ### Fixed
 
+- Getting knocked out by the explosion that ends the game now shows you the
+  spectator reveal too. Previously the player whose blast ended the game (and
+  both players in a two-player game) jumped straight to the win screen and never
+  got to see the final hands or the deck. If you're the host, you can still start
+  the next game straight from the spectator screen.
 - The end-to-end test suite now matches the lobby player count regardless of the
   table size, so it no longer breaks when the maximum jumps from 5 to 9 players.
   No player-facing change; the deployed game was already correct.

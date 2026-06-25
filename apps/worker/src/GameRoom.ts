@@ -637,7 +637,16 @@ export class GameRoom {
         ? 'eliminated'
         : null;
     const view = reason
-      ? projectSpectatorView(this.game, this.roomCode, this.nopeDeadline, this.stealPickableAt, reason)
+      ? projectSpectatorView(
+          this.game,
+          this.roomCode,
+          this.nopeDeadline,
+          this.stealPickableAt,
+          reason,
+          // Read-only watchers stay seatless; an eliminated player keeps their id
+          // so the view knows who they are (e.g. a knocked-out host can restart).
+          meta.spectator ? '' : meta.playerId,
+        )
       : projectView(this.game, this.roomCode, meta.playerId, this.nopeDeadline, this.stealPickableAt);
     this.send(ws, { t: 'view', view });
   }
