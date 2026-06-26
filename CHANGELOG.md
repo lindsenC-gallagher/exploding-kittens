@@ -10,6 +10,12 @@ there are no tagged releases. Entries are grouped by date instead of version.
 
 ### Added
 
+- New host option "Smaller deck (faster games)". When on, the deck's
+  non-essential cards (action cards and cat cards) are roughly halved, so big
+  tables (6-9 players, which normally combine two full decks) finish sooner.
+  Exploding Kittens and Defuse are left untouched, so the game stays just as fair
+  and survivable, and the trim is automatically eased back at small tables so
+  everyone is always dealt a full starting hand. Off by default.
 - You can now mute background music and sound effects separately. The top-right
   cluster has two toggles: a speaker for sound effects and a music note for the
   background loop. Each remembers its own on/off setting between visits.

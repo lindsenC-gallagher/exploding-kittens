@@ -106,6 +106,45 @@ describe('deck composition & setup', () => {
     }
   });
 
+  it('smaller deck yields a meaningfully smaller draw pile for 6 players', () => {
+    const full = startGame(setOptions(lobbyWith(6), { smallerDeck: false }), 123);
+    const small = startGame(setOptions(lobbyWith(6), { smallerDeck: true }), 123);
+    expect(full.ok && small.ok).toBe(true);
+    if (!full.ok || !small.ok) throw new Error('setup failed');
+    // Both deal the same hands + Defuse + Exploding Kittens, so a smaller draw
+    // pile means a genuinely trimmed deck. Expect a clear reduction, not a token one.
+    expect(small.state.drawPile.length).toBeLessThan(full.state.drawPile.length - 5);
+  });
+
+  it('smaller deck still deals a full hand + Defuse and (players - 1) Exploding Kittens', () => {
+    for (const n of [2, 6, 9]) {
+      const r = startGame(setOptions(lobbyWith(n), { smallerDeck: true }), 123);
+      expect(r.ok).toBe(true);
+      if (!r.ok) throw new Error(r.error);
+      const state = r.state;
+      for (const p of state.players) {
+        expect(p.hand.length).toBe(RULES.startingHandSize + 1);
+        expect(p.hand.filter((c) => c.type === CardType.Defuse).length).toBeGreaterThanOrEqual(1);
+        expect(p.hand.some((c) => c.type === CardType.ExplodingKitten)).toBe(false);
+      }
+      const eks = state.drawPile.filter((c) => c.type === CardType.ExplodingKitten).length;
+      expect(eks).toBe(n - 1);
+    }
+  });
+
+  it('smaller deck at a small player count still deals correctly (safety clamp)', () => {
+    const r = startGame(setOptions(lobbyWith(2), { smallerDeck: true }), 7);
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error(r.error);
+    const state = r.state;
+    // Everyone got a full hand + Defuse, and the draw pile still has something
+    // left after dealing (no under-supply).
+    for (const p of state.players) {
+      expect(p.hand.length).toBe(RULES.startingHandSize + 1);
+    }
+    expect(state.drawPile.length).toBeGreaterThan(state.players.length);
+  });
+
   it('caps the lobby at maxPlayers', () => {
     const full = lobbyWith(RULES.maxPlayers);
     expect(full.players).toHaveLength(RULES.maxPlayers);
@@ -911,6 +950,7 @@ describe('house rules (options)', () => {
       allowFiveDifferent: true,
       limitAttackStacking: true,
       maxAttackTurns: MIN_ATTACK_TURNS,
+      smallerDeck: false,
       theme: 'cats',
     });
   });

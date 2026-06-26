@@ -50,6 +50,15 @@ export interface GameOptions {
    * raise it up to {@link MAX_ATTACK_TURNS} to allow deeper chains.
    */
   maxAttackTurns: number;
+  /**
+   * Play with a trimmed deck for faster games. When true the engine roughly
+   * halves the non-essential card pool (cat cards and action cards), so big
+   * tables (6-9 players, which combine two decks) don't drag on. Exploding
+   * Kittens and Defuse are untouched, so the game stays fair and survivable, and
+   * the trim is clamped so every player can always be dealt a full starting hand.
+   * Default `false` (the faithful full deck).
+   */
+  smallerDeck: boolean;
   /** Cosmetic card-art skin for the whole table. Default `cats`. */
   theme: Theme;
 }
@@ -69,6 +78,7 @@ export const DEFAULT_OPTIONS: GameOptions = {
   allowFiveDifferent: true,
   limitAttackStacking: true,
   maxAttackTurns: MIN_ATTACK_TURNS,
+  smallerDeck: false,
   theme: 'cats',
 };
 

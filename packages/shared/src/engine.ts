@@ -36,18 +36,64 @@ function makeCard(type: CardType): Card {
   return { id: `c${cardCounter}`, type };
 }
 
+/** Non-essential card types and their combined count across `copies` decks. */
+function nonEssentialCounts(copies: number): Map<CardType, number> {
+  const counts = new Map<CardType, number>();
+  for (const [type, count] of Object.entries(BASE_DECK_COMPOSITION)) {
+    if (type === CardType.ExplodingKitten || type === CardType.Defuse) continue;
+    counts.set(type as CardType, count * copies);
+  }
+  return counts;
+}
+
+/**
+ * Roughly halve the non-essential card pool for the "smaller deck" house rule:
+ * each card type's combined count is halved (rounded), keeping at least 1 of
+ * every type that normally appears. The result is then clamped UP so the pool
+ * can always deal everyone a full starting hand and still leave a small draw
+ * pile — we never produce a deck that can't deal. The clamp tops cards back up
+ * (largest-stack first) until the floor is met, so the trim only ever shrinks
+ * toward, never past, a playable deck.
+ */
+function trimNonEssentialCounts(counts: Map<CardType, number>, players: number): Map<CardType, number> {
+  const trimmed = new Map<CardType, number>();
+  for (const [type, count] of counts) trimmed.set(type, Math.max(1, Math.round(count / 2)));
+
+  // Floor: enough to deal startingHandSize to each player plus a small draw pile.
+  // (Exploding Kittens and Defuse are added separately and not counted here.)
+  const minDrawPile = players + 2;
+  const floor = RULES.startingHandSize * players + minDrawPile;
+
+  let total = [...trimmed.values()].reduce((a, b) => a + b, 0);
+  const headroom = (type: CardType) => counts.get(type)! - trimmed.get(type)!;
+  // Add cards back, biggest available stack first, until we clear the floor or
+  // hit the full (untrimmed) pool. Deterministic order keeps setup reproducible.
+  while (total < floor) {
+    let best: CardType | undefined;
+    for (const [type] of trimmed) {
+      if (headroom(type) <= 0) continue;
+      if (best === undefined || trimmed.get(type)! > trimmed.get(best)!) best = type;
+    }
+    if (best === undefined) break; // pool already at full size; can't add more
+    trimmed.set(best, trimmed.get(best)! + 1);
+    total += 1;
+  }
+  return trimmed;
+}
+
 /**
  * Build the base deck minus Exploding Kittens and Defuse (added during setup).
  * `copies` combines that many decks — the faithful way to seat more than 5
- * players (one deck for 2-5, two for 6-9).
+ * players (one deck for 2-5, two for 6-9). When `smaller` is true the
+ * non-essential pool is trimmed (see {@link trimNonEssentialCounts}) for faster
+ * games; `players` lets the trim clamp so a full deal is always possible.
  */
-function buildBaseDeck(copies = 1): Card[] {
+function buildBaseDeck(copies = 1, smaller = false, players = 0): Card[] {
+  const counts = nonEssentialCounts(copies);
+  const finalCounts = smaller ? trimNonEssentialCounts(counts, players) : counts;
   const cards: Card[] = [];
-  for (let c = 0; c < copies; c++) {
-    for (const [type, count] of Object.entries(BASE_DECK_COMPOSITION)) {
-      if (type === CardType.ExplodingKitten || type === CardType.Defuse) continue;
-      for (let i = 0; i < count; i++) cards.push(makeCard(type as CardType));
-    }
+  for (const [type, count] of finalCounts) {
+    for (let i = 0; i < count; i++) cards.push(makeCard(type));
   }
   return cards;
 }
@@ -131,7 +177,9 @@ export function startGame(state: GameState, seed: number): ApplyResult {
   // host option.
   const copies = deckCopiesFor(n);
   const rng = createRng(seed);
-  let deck = shuffle(buildBaseDeck(copies), rng);
+  // The host's "smaller deck" rule trims the non-essential pool for faster games;
+  // the trim self-clamps so a full deal is always possible (see buildBaseDeck).
+  let deck = shuffle(buildBaseDeck(copies, gameOptions(state).smallerDeck, n), rng);
 
   // Deal startingHandSize cards to each player, then give each one Defuse.
   const players = state.players.map((p) => ({ ...p, hand: [] as Card[], alive: true, ready: true }));

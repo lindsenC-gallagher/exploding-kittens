@@ -22,7 +22,7 @@ const MAX_CARDS_PER_PLAY = 5;
 /** Generous upper bound on a hand size for a `reorder_hand` permutation. */
 const MAX_HAND_IDS = 64;
 /** The boolean house-rule flags a client may toggle. */
-const OPTION_KEYS = ['allowPairSteal', 'allowTripleDemand', 'allowFiveDifferent', 'limitAttackStacking'] as const;
+const OPTION_KEYS = ['allowPairSteal', 'allowTripleDemand', 'allowFiveDifferent', 'limitAttackStacking', 'smallerDeck'] as const;
 const THEME_SET: ReadonlySet<string> = new Set(THEMES);
 
 function isStr(v: unknown): v is string {

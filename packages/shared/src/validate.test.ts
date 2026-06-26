@@ -102,6 +102,14 @@ describe('parseClientMessage — well-formed messages', () => {
     ).toEqual({ t: 'set_options', options: { allowPairSteal: false, theme: 'dogs' } });
   });
 
+  it('accepts the smaller-deck toggle and rejects a non-boolean', () => {
+    expect(parseClientMessage(j({ t: 'set_options', options: { smallerDeck: true } }))).toEqual({
+      t: 'set_options',
+      options: { smallerDeck: true },
+    });
+    expect(parseClientMessage(j({ t: 'set_options', options: { smallerDeck: 'yes' } }))).toBeNull();
+  });
+
   it('accepts the attack-stacking limit toggle and an in-range max', () => {
     expect(parseClientMessage(j({ t: 'set_options', options: { limitAttackStacking: false } }))).toEqual({
       t: 'set_options',

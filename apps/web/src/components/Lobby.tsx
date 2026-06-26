@@ -274,6 +274,31 @@ export function Lobby({ view, send }: LobbyProps) {
               </>
             );
           })()}
+
+          {(() => {
+            const smaller = view.options.smallerDeck ?? false;
+            return (
+              <button
+                type="button"
+                className="rule-toggle"
+                disabled={!isHost}
+                aria-pressed={smaller}
+                onClick={isHost ? () => send({ t: 'set_options', options: { smallerDeck: !smaller } }) : undefined}
+              >
+                <span className={`rule-switch ${smaller ? 'on' : ''}`} aria-hidden>
+                  <span className="rule-knob" />
+                </span>
+                <span className="rule-text">
+                  <span className="rule-name">Smaller deck (faster games)</span>
+                  <span className="rule-hint">
+                    Trims the deck for big tables (6-9 players) so games finish sooner. Exploding
+                    Kittens and Defuse are unchanged.
+                  </span>
+                </span>
+                <span className={`rule-state ${smaller ? 'on' : ''}`}>{smaller ? 'On' : 'Off'}</span>
+              </button>
+            );
+          })()}
         </div>
 
         <div className="row" style={{ justifyContent: 'center', marginTop: 12 }}>
