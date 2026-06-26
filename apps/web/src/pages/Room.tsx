@@ -1,7 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { useGameSocket } from '../hooks/useGameSocket.js';
+import { useGameSocket, type UseGameSocket } from '../hooks/useGameSocket.js';
 import { getName, getPlayerId, normalizeName, setName as persistName } from '../lib/identity.js';
 import { Lobby } from '../components/Lobby.js';
 import { GameTable } from '../components/GameTable.js';
@@ -9,8 +9,12 @@ import { SpectatorView } from '../components/SpectatorView.js';
 import { WaitingRoom } from '../components/WaitingRoom.js';
 import { HelpButton } from '../components/Help.js';
 import { ChangelogButton } from '../components/Changelog.js';
+import { ExplosionFlash } from '../components/Overlays.js';
 import { startMusic, stopMusic } from '../lib/sound.js';
 import { ThemeContext } from '../theme.js';
+
+/** How long to dwell on the explosion before flipping the player to spectating. */
+const EXPLOSION_HOLD_MS = 2800;
 
 export function Room() {
   const { code = '' } = useParams();
@@ -139,7 +143,7 @@ function ConnectedRoom({
       {sock.view.isWaiting ? (
         <WaitingRoom view={sock.view} onLeave={onLeave} />
       ) : sock.view.isSpectator ? (
-        <SpectatorView view={sock.view} send={sock.send} lastEvents={sock.lastEvents} onLeave={onLeave} />
+        <SpectatorOrExplosion sock={sock} onLeave={onLeave} />
       ) : sock.view.phase === 'lobby' ? (
         <Lobby view={sock.view} send={sock.send} />
       ) : (
@@ -147,4 +151,55 @@ function ConnectedRoom({
       )}
     </ThemeContext.Provider>
   );
+}
+
+/**
+ * Spectator screen, but with a short "you blew up" beat first when this player
+ * just exploded. The server flips us straight to spectating the instant the
+ * Exploding Kitten goes off, which would otherwise cut the explosion short. So
+ * when the most recent events include an `exploded` for *us*, we hold on the
+ * ExplosionFlash for a moment before revealing the spectator view. We only
+ * delay for our own fresh explosion — not for waiting/watching, or for an
+ * already-out player who reconnects into a game in progress.
+ */
+function SpectatorOrExplosion({ sock, onLeave }: { sock: UseGameSocket; onLeave: () => void }) {
+  const view = sock.view!;
+  const youId = view.youId;
+  const [exploding, setExploding] = useState(false);
+  // Each explosion beat fires exactly once: we remember the event-batch id that
+  // triggered it so a re-render with the same batch can't re-arm the timer.
+  const handledEventId = useRef<number | null>(null);
+  const timerRef = useRef<ReturnType<typeof setTimeout>>();
+
+  useEffect(() => {
+    const batch = sock.lastEvents;
+    if (!batch || batch.id === handledEventId.current) return;
+    const iExploded = batch.events.some((e) => e.type === 'exploded' && e.playerId === youId);
+    if (!iExploded) return;
+    handledEventId.current = batch.id;
+    setExploding(true);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => setExploding(false), EXPLOSION_HOLD_MS);
+  }, [sock.lastEvents, youId]);
+
+  useEffect(() => () => clearTimeout(timerRef.current), []);
+
+  if (exploding) {
+    return (
+      <div className="center-page">
+        <ExplosionFlash show />
+        <motion.div
+          className="title"
+          style={{ position: 'fixed', bottom: '22%', left: 0, right: 0, textAlign: 'center', fontSize: 36 }}
+          initial={{ scale: 0.6, opacity: 0 }}
+          animate={{ scale: 1, opacity: 1 }}
+          transition={{ delay: 0.4, type: 'spring', stiffness: 220, damping: 14 }}
+        >
+          💥 You exploded!
+        </motion.div>
+      </div>
+    );
+  }
+
+  return <SpectatorView view={view} send={sock.send} lastEvents={sock.lastEvents} onLeave={onLeave} />;
 }

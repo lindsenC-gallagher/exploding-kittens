@@ -40,6 +40,9 @@ there are no tagged releases. Entries are grouped by date instead of version.
   shown clearly as you choose. A live 1-based slot number rides along with the
   insertion marker as you drag (so the top slot reads "1st — next draw" instead
   of "position 0"), and the badge under the deck spells out the chosen slot.
+- When you draw the Exploding Kitten and have no Defuse, you now get a brief
+  "💥 You exploded!" moment before the screen switches you to spectating, so the
+  blow-up actually lands instead of vanishing instantly.
 - You now drop into spectator mode automatically when you're knocked out of a
   game. Eliminated players keep their seat, see the full reveal (every hand and
   the deck), and rejoin as a player when the host starts the next game.
