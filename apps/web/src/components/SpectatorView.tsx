@@ -9,8 +9,6 @@ import { useTheme } from '../theme.js';
 /** Short banner clause explaining why this viewer is spectating. */
 const REASON_TEXT: Record<SpectatorReason, string> = {
   eliminated: "you're out — watching till the next game",
-  'in-progress': "this game's already underway",
-  'lobby-full': 'the table is full',
   watching: 'just watching',
 };
 

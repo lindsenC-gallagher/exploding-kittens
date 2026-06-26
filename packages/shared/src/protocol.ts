@@ -47,13 +47,16 @@ export interface PublicPlayer {
 }
 
 /**
- * Why a viewer is watching rather than playing:
- * - `eliminated`  — they were a seated player who got knocked out mid-game
- * - `in-progress` — they opened a room whose game was already underway
- * - `lobby-full`  — they opened a room whose lobby was already full
- * - `watching`    — they chose to watch (the explicit "spectate" link)
+ * Why a viewer is watching the unredacted reveal rather than playing:
+ * - `eliminated` — they were a seated player who got knocked out mid-game
+ * - `watching`   — they chose to watch the lobby via the explicit "spectate" link
+ *
+ * Both only ever apply to someone who is part of the current game (a seated
+ * player) or who is watching before any cards are dealt. A newcomer who lands on
+ * a room mid-game is parked on the waiting screen instead (see {@link ClientGameView.isWaiting}),
+ * so they never receive hidden information.
  */
-export type SpectatorReason = 'eliminated' | 'in-progress' | 'lobby-full' | 'watching';
+export type SpectatorReason = 'eliminated' | 'watching';
 
 /** A personalized, redacted view of the game for one recipient. */
 export interface ClientGameView {
@@ -115,6 +118,13 @@ export interface ClientGameView {
   winnerId: string | null;
   /** True when this view is for a spectator (not a seated player). */
   isSpectator: boolean;
+  /**
+   * True when this view is for someone waiting to join: they reached a room
+   * whose game is already underway and were not dealt into it. They see only a
+   * holding screen (never any hidden info) and are seated automatically when the
+   * host starts the next game. Mutually exclusive with {@link isSpectator}.
+   */
+  isWaiting: boolean;
   /**
    * Present only for spectators: the unredacted hands of every player and the
    * full draw-pile order (top first), plus why this viewer is spectating (so the

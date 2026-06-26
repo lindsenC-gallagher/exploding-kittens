@@ -6,6 +6,7 @@ import { getName, getPlayerId, normalizeName, setName as persistName } from '../
 import { Lobby } from '../components/Lobby.js';
 import { GameTable } from '../components/GameTable.js';
 import { SpectatorView } from '../components/SpectatorView.js';
+import { WaitingRoom } from '../components/WaitingRoom.js';
 import { HelpButton } from '../components/Help.js';
 import { ChangelogButton } from '../components/Changelog.js';
 import { startMusic, stopMusic } from '../lib/sound.js';
@@ -135,7 +136,9 @@ function ConnectedRoom({
       <HelpButton view={sock.view} />
       <ChangelogButton right={168} />
 
-      {sock.view.isSpectator ? (
+      {sock.view.isWaiting ? (
+        <WaitingRoom view={sock.view} onLeave={onLeave} />
+      ) : sock.view.isSpectator ? (
         <SpectatorView view={sock.view} send={sock.send} lastEvents={sock.lastEvents} onLeave={onLeave} />
       ) : sock.view.phase === 'lobby' ? (
         <Lobby view={sock.view} send={sock.send} />

@@ -8,6 +8,7 @@ import {
   parseClientMessage,
   projectSpectatorView,
   projectView,
+  projectWaitingView,
   redactEventForRecipient,
   reorderHand,
   resetToLobby,
@@ -30,6 +31,12 @@ interface SocketMeta {
   spectator?: boolean;
   /** Why this watcher is spectating (drives the on-screen banner). */
   spectatorReason?: SpectatorReason;
+  /**
+   * True for someone who reached a room mid-game without a seat. Unlike a
+   * spectator they receive NO hidden info — just a holding screen — and are
+   * seated automatically when the host starts the next game.
+   */
+  waiting?: boolean;
 }
 
 /** A scheduled timer's purpose, so the alarm knows what to do when it fires. */
@@ -70,6 +77,12 @@ export class GameRoom {
   private roomCode = '';
   /** Per-seat secret tokens: playerId -> token. Authenticates reconnects. */
   private tokens: Record<string, string> = {};
+  /**
+   * People who arrived mid-game without a seat: playerId -> chosen name. They
+   * watch a holding screen (no hidden info) and are dealt into the next game the
+   * host starts, capacity permitting. Persisted so a reconnect keeps its place.
+   */
+  private waiting: Record<string, string> = {};
   private loaded = false;
   /** Current Nope-window deadline (epoch ms) for the client countdown, or null. */
   private nopeDeadline: number | null = null;
@@ -96,6 +109,7 @@ export class GameRoom {
     this.game = (await this.ctx.storage.get<GameState>('game')) ?? createLobby('');
     this.roomCode = (await this.ctx.storage.get<string>('code')) ?? '';
     this.tokens = (await this.ctx.storage.get<Record<string, string>>('tokens')) ?? {};
+    this.waiting = (await this.ctx.storage.get<Record<string, string>>('waiting')) ?? {};
     const kind = await this.ctx.storage.get<TimerKind>('timerKind');
     this.nopeDeadline = kind === 'nope' ? ((await this.ctx.storage.get<number>('timerDeadline')) ?? null) : null;
     this.stealPickableAt = (await this.ctx.storage.get<number>('stealPickableAt')) ?? null;
@@ -125,40 +139,54 @@ export class GameRoom {
     const pid = url.searchParams.get('pid');
     const token = url.searchParams.get('token') ?? '';
     const name = clampName(url.searchParams.get('name'));
-    let spectate = url.searchParams.get('spectate') === '1';
-    // The explicit "watch" link is just that — watching by choice.
-    let spectatorReason: SpectatorReason = 'watching';
+    const spectate = url.searchParams.get('spectate') === '1';
     if (!pid || pid.length > 64) return new Response('Missing pid', { status: 400 });
     if (request.headers.get('Upgrade') !== 'websocket') {
       return new Response('Expected websocket', { status: 426 });
     }
 
-    // Anyone who lands on a room they can't get a seat in — a game already in
-    // progress, or a full lobby — watches as a spectator instead of being turned
-    // away. Returning seated players (who hold a token) still authenticate below.
-    if (!spectate && !this.tokens[pid]) {
-      const isPlayer = this.game.players.some((p) => p.id === pid);
-      const lobbyHasRoom =
-        this.game.phase === 'lobby' && this.game.players.length < RULES.maxPlayers;
-      if (!isPlayer && !lobbyHasRoom) {
-        spectate = true;
-        spectatorReason = this.game.phase === 'lobby' ? 'lobby-full' : 'in-progress';
-      }
-    }
-
-    // Spectators are read-only watchers: no seat, no token, no player record.
-    // They may watch at any time (lobby or in-progress) and never affect the game.
-    if (spectate) {
+    // The explicit "watch" link is honored only in the lobby, where there is no
+    // hidden information to leak (hands are empty, the deck isn't dealt). Once a
+    // game is underway, only players who were dealt in may see the reveal, so a
+    // mid-game watch link falls through to the waiting path below instead.
+    if (spectate && this.game.phase === 'lobby' && !this.tokens[pid]) {
       const pair = new WebSocketPair();
       this.ctx.acceptWebSocket(pair[1]);
       pair[1].serializeAttachment({
         playerId: pid,
         spectator: true,
-        spectatorReason,
+        spectatorReason: 'watching',
       } satisfies SocketMeta);
       this.sendView(pair[1]);
       this.send(pair[1], { t: 'joined', youId: pid, roomCode: this.roomCode, token: '' });
       return new Response(null, { status: 101, webSocket: pair[0] });
+    }
+
+    // Only people who were dealt into the current game may watch the unredacted
+    // reveal: an eliminated seated player still holds a token, so they fall
+    // through to the seat path below and `sendView` hands them the spectator
+    // reveal via `shouldSpectate`. A newcomer (no token, not seated, and the
+    // lobby isn't open to them) must NOT see hidden info. They're parked on a
+    // holding screen and seated when the host starts the next game. This also
+    // covers an explicit ?spectate=1 link from a non-player: honoring it would
+    // re-expose every hand mid-game, so we route it to the waiting screen too.
+    if (!this.tokens[pid]) {
+      const isPlayer = this.game.players.some((p) => p.id === pid);
+      const lobbyHasRoom =
+        this.game.phase === 'lobby' && this.game.players.length < RULES.maxPlayers;
+      if (!isPlayer && !lobbyHasRoom) {
+        // Remember their name so the next game deals them in with it.
+        if (this.waiting[pid] !== name) {
+          this.waiting[pid] = name;
+          await this.ctx.storage.put('waiting', this.waiting);
+        }
+        const pair = new WebSocketPair();
+        this.ctx.acceptWebSocket(pair[1]);
+        pair[1].serializeAttachment({ playerId: pid, waiting: true } satisfies SocketMeta);
+        this.sendView(pair[1]);
+        this.send(pair[1], { t: 'joined', youId: pid, roomCode: this.roomCode, token: '' });
+        return new Response(null, { status: 101, webSocket: pair[0] });
+      }
     }
 
     // Authenticate the seat. The first connection for a pid mints a secret token;
@@ -166,7 +194,7 @@ export class GameRoom {
     // A legitimate client that loses its token also loses its pid (both live in
     // localStorage), so only an impersonator would arrive with a known pid and no
     // token. New seats are handed out only for an open lobby. A seat-less
-    // connection to an in-progress room has already been diverted to spectating
+    // connection to an in-progress room has already been diverted to waiting
     // above, so the guard below is a defensive backstop (the token map still
     // can't grow past the lobby cap).
     const existing = this.tokens[pid];
@@ -217,6 +245,67 @@ export class GameRoom {
     this.broadcastViews();
   }
 
+  /**
+   * Deal anyone who was waiting (parked while a game was in progress) into the
+   * now-open lobby, up to the table cap. Each promoted player gets a real seat,
+   * a freshly minted token, and their socket is upgraded from a read-only
+   * waiting socket to a normal seated one. Anyone who doesn't fit stays waiting.
+   * Call only when the game is back in the lobby.
+   */
+  private async seatWaitingPlayers(): Promise<void> {
+    const waiters = Object.entries(this.waiting);
+    if (waiters.length === 0) return;
+    let tokensChanged = false;
+    for (const [pid, name] of waiters) {
+      if (this.game.players.length >= RULES.maxPlayers) break; // table full — keep waiting
+      const taken = this.game.players.map((p) => p.avatar);
+      const avatar = pickAvatar(taken, (max) => cryptoSeed() % max);
+      const r = addPlayer(this.game, pid, name, avatar);
+      if (!r.ok) continue;
+      this.game = r.state;
+      // Mint the seat token and release the waiting slot.
+      const issued = crypto.randomUUID();
+      this.tokens[pid] = issued;
+      delete this.waiting[pid];
+      tokensChanged = true;
+      // Upgrade this player's waiting socket(s) to seated, and hand them the
+      // token they now need to reconnect with.
+      for (const ws of this.sockets()) {
+        const meta = ws.deserializeAttachment() as SocketMeta | null;
+        if (meta?.playerId !== pid) continue;
+        ws.serializeAttachment({ playerId: pid } satisfies SocketMeta);
+        this.send(ws, { t: 'joined', youId: pid, roomCode: this.roomCode, token: issued });
+      }
+    }
+    if (tokensChanged) {
+      await this.ctx.storage.put('tokens', this.tokens);
+      await this.ctx.storage.put('waiting', this.waiting);
+      await this.persist();
+    }
+  }
+
+  /**
+   * Convert seatless lobby watchers into waiting newcomers when a game starts.
+   * A lobby watcher saw no hidden info; once the deal happens they must not get
+   * the unredacted reveal, so we re-flag their socket as waiting and register
+   * them so the next game seats them. Seated players (who hold a token) are
+   * untouched — an eliminated one still earns the reveal via `shouldSpectate`.
+   */
+  private async parkSpectatorsForInProgress(): Promise<void> {
+    let changed = false;
+    for (const ws of this.sockets()) {
+      const meta = ws.deserializeAttachment() as SocketMeta | null;
+      if (!meta?.spectator) continue;
+      if (this.tokens[meta.playerId]) continue; // a seated player's reveal, leave it
+      ws.serializeAttachment({ playerId: meta.playerId, waiting: true } satisfies SocketMeta);
+      if (this.waiting[meta.playerId] === undefined) {
+        this.waiting[meta.playerId] = 'Player';
+        changed = true;
+      }
+    }
+    if (changed) await this.ctx.storage.put('waiting', this.waiting);
+  }
+
   async webSocketMessage(ws: WebSocket, raw: string | ArrayBuffer): Promise<void> {
     await this.load();
     if (typeof raw !== 'string') return;
@@ -225,7 +314,7 @@ export class GameRoom {
     if (!msg) return; // malformed / unknown frame — ignore rather than crash
     const meta = ws.deserializeAttachment() as SocketMeta | null;
     if (!meta) return;
-    if (meta.spectator) return; // read-only watcher; never mutates the game
+    if (meta.spectator || meta.waiting) return; // read-only; never mutates the game
     await this.dispatch(ws, meta.playerId, msg);
   }
 
@@ -247,6 +336,15 @@ export class GameRoom {
     if (!meta) return;
     // If the player still has another live socket (e.g. a second tab), do nothing.
     if (this.hasLiveSocket(meta.playerId, ws)) return;
+    // A waiting newcomer who leaves before the next game gives up their place —
+    // release the waiting slot so the map can't grow without bound.
+    if (meta.waiting) {
+      if (this.waiting[meta.playerId] !== undefined) {
+        delete this.waiting[meta.playerId];
+        await this.ctx.storage.put('waiting', this.waiting);
+      }
+      return;
+    }
     await this.markDisconnected(meta.playerId);
   }
 
@@ -336,6 +434,10 @@ export class GameRoom {
         }
         this.game = r.state;
         await this.persist();
+        // A lobby watcher must not see the in-progress reveal: now that the deal
+        // has happened, downgrade any seatless spectator to a waiting newcomer so
+        // they get the holding screen and join the next game, not this one.
+        await this.parkSpectatorsForInProgress();
         this.broadcastEvents(r.events);
         await this.settle();
         this.broadcastViews();
@@ -348,6 +450,9 @@ export class GameRoom {
         if (pid !== this.game.hostId || this.game.phase !== 'gameOver') return;
         this.game = resetToLobby(this.game);
         await this.persist();
+        // Now that there's an open lobby, deal in anyone who was waiting (up to
+        // the table cap). They become normal seated players for the next game.
+        await this.seatWaitingPlayers();
         this.broadcastViews();
         return;
       }
@@ -628,6 +733,15 @@ export class GameRoom {
   private sendView(ws: WebSocket): void {
     const meta = ws.deserializeAttachment() as SocketMeta | null;
     if (!meta) return;
+    // Someone waiting to join an in-progress game gets a holding view with NO
+    // hidden info (no other hands, no deck order) until the next game seats them.
+    if (meta.waiting) {
+      this.send(ws, {
+        t: 'view',
+        view: projectWaitingView(this.game, this.roomCode, this.nopeDeadline, this.stealPickableAt),
+      });
+      return;
+    }
     // Read-only watchers, and seated players who've been eliminated mid-game,
     // both get the unredacted spectator projection (all hands + the deck), tagged
     // with why they're watching so the UI can explain it.

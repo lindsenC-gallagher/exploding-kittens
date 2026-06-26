@@ -80,9 +80,27 @@ export function projectView(
         : null,
     winnerId: state.winnerId ?? null,
     isSpectator: false,
+    isWaiting: false,
     spectator: null,
     version: state.version,
   };
+}
+
+/**
+ * Project a holding view for someone waiting to join an in-progress game. They
+ * are not a seated player and not a spectator, so they receive NO hidden
+ * information: no other hands, no draw-pile order. They keep seeing the public
+ * shell (room code, who's playing, phase) and are seated automatically when the
+ * host starts the next game. `youId` is empty because they hold no seat yet.
+ */
+export function projectWaitingView(
+  state: GameState,
+  roomCode: string,
+  nopeDeadline: number | null,
+  stealPickableAt: number | null = null,
+): ClientGameView {
+  const base = projectView(state, roomCode, '', nopeDeadline, stealPickableAt);
+  return { ...base, isWaiting: true };
 }
 
 /**
@@ -106,6 +124,7 @@ export function projectSpectatorView(
   return {
     ...base,
     isSpectator: true,
+    isWaiting: false,
     spectator: {
       hands: state.players.map((p) => ({ playerId: p.id, cards: p.hand })),
       drawPile: state.drawPile,

@@ -40,15 +40,19 @@ there are no tagged releases. Entries are grouped by date instead of version.
   shown clearly as you choose. A live 1-based slot number rides along with the
   insertion marker as you drag (so the top slot reads "1st — next draw" instead
   of "position 0"), and the badge under the deck spells out the chosen slot.
-- You now drop into spectator mode automatically: when you're knocked out of a
-  game, and when you open a room whose game is already underway (or whose lobby is
-  full). Eliminated players keep their seat and rejoin as a player when the host
-  starts the next game.
+- You now drop into spectator mode automatically when you're knocked out of a
+  game. Eliminated players keep their seat, see the full reveal (every hand and
+  the deck), and rejoin as a player when the host starts the next game.
+- Opening a room whose game is already underway no longer lets you watch every
+  player's hand and the deck. Newcomers now see a "A game is in progress, you'll
+  join the next game" waiting screen with no hidden info, and are dealt in
+  automatically when the host starts the next game (if a seat is free). Only
+  players who were in the current game, including those later eliminated, can see
+  the reveal. The watch link still works in the lobby, before the deal.
 - In spectator mode the draw pile now stays face-down until you click it, so the
   deck order isn't spoiled the moment you start watching. Click again to hide it.
 - The spectator banner now explains why you're watching, for example "you're out,
-  watching till the next game" when you've been knocked out, or "this game's
-  already underway" when you join a room mid-game.
+  watching till the next game" when you've been knocked out.
 
 ### Fixed
 

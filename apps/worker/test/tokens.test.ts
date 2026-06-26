@@ -1,20 +1,31 @@
 import { env, runInDurableObject } from 'cloudflare:test';
 import { describe, it, expect } from 'vitest';
-import { CardType } from '@ek/shared';
+import { CardType, type ClientGameView } from '@ek/shared';
 import type { GameRoom } from '../src/GameRoom.js';
 
 type Tokens = Record<string, string>;
 type SocketMeta = { playerId: string };
-type SpectatorMeta = SocketMeta & { spectator?: boolean; spectatorReason?: string };
+type SpectatorMeta = SocketMeta & {
+  spectator?: boolean;
+  spectatorReason?: string;
+  waiting?: boolean;
+};
 
 /** Open a (hibernatable) seat socket for `pid` on the given room's Durable Object. */
 async function connect(stub: DurableObjectStub, code: string, pid: string): Promise<void> {
+  await connectSocket(stub, code, pid);
+}
+
+/** Open a socket for `pid` (seat or waiting, server decides) and return its client end. */
+async function connectSocket(stub: DurableObjectStub, code: string, pid: string): Promise<WebSocket> {
   const res = await stub.fetch(`https://room/${code}/ws?pid=${pid}&name=${pid}`, {
     headers: { Upgrade: 'websocket' },
   });
   expect(res.status).toBe(101);
-  // Accept the client end so the server-side seat socket stays live.
-  res.webSocket?.accept();
+  const ws = res.webSocket!;
+  // Accept the client end so the server-side socket stays live.
+  ws.accept();
+  return ws;
 }
 
 /** Open a read-only spectator socket (no seat, no token). */
@@ -219,15 +230,16 @@ describe('GameRoom Nope cooldown', () => {
 });
 
 describe('GameRoom spectators', () => {
-  it('watches without taking a seat or a token', async () => {
+  it('parks a mid-game arrival on the waiting screen (no seat, no token, read-only)', async () => {
     const stub = env.GAME_ROOM.get(env.GAME_ROOM.idFromName('SPEC1'));
     await connect(stub, 'SPEC1', 'a');
     await connect(stub, 'SPEC1', 'b');
     await dispatchAs(stub, 'a', { t: 'start_game' });
 
+    // A mid-game arrival (even via the explicit watch link) is parked, not seated.
     await connectSpectator(stub, 'SPEC1', 'watcher');
 
-    // The spectator is not added as a player and holds no seat token.
+    // The newcomer is not added as a player and holds no seat token.
     const players = await runInDurableObject(stub, async (_i, state) => {
       const g = (await state.storage.get<{ players: { id: string }[] }>('game'))!;
       return g.players.map((p) => p.id);
@@ -236,11 +248,11 @@ describe('GameRoom spectators', () => {
     expect([...players].sort()).toEqual(['a', 'b']);
     expect(await tokenKeys(stub)).toEqual(['a', 'b']); // 'watcher' absent
 
-    // A frame from the spectator socket is ignored (read-only).
+    // A frame from the waiting socket is ignored (read-only).
     await runInDurableObject(stub, async (instance: GameRoom, state) => {
       const sws = state.getWebSockets().find((w) => {
-        const meta = w.deserializeAttachment() as (SocketMeta & { spectator?: boolean }) | null;
-        return meta?.spectator === true;
+        const meta = w.deserializeAttachment() as SpectatorMeta | null;
+        return meta?.waiting === true;
       });
       expect(sws).toBeDefined();
       await (instance as unknown as {
@@ -275,15 +287,31 @@ describe('GameRoom spectators', () => {
     expect(flat.some((e) => e.type === 'game_started')).toBe(true);
   });
 
-  it('auto-spectates a seat-less join to an in-progress room (no 403)', async () => {
+  it('parks a seat-less mid-game arrival as waiting with NO hidden info (no 403)', async () => {
     const stub = env.GAME_ROOM.get(env.GAME_ROOM.idFromName('SPEC2'));
     await connect(stub, 'SPEC2', 'a');
     await connect(stub, 'SPEC2', 'b');
     await dispatchAs(stub, 'a', { t: 'start_game' });
 
-    // 'watcher' has no seat and the game is underway. Instead of a 403 they're
-    // upgraded to a read-only spectator (connect() asserts the 101 upgrade).
-    await connect(stub, 'SPEC2', 'watcher');
+    // 'watcher' has no seat and the game is underway. Instead of a 403 — or an
+    // unfair unredacted spectate — they get a read-only WAITING socket and view.
+    const views: ClientGameView[] = [];
+    const ws = await connectSocket(stub, 'SPEC2', 'watcher');
+    ws.addEventListener('message', (ev) => {
+      const msg = JSON.parse((ev as MessageEvent).data as string) as {
+        t: string;
+        view?: ClientGameView;
+      };
+      if (msg.t === 'view' && msg.view) views.push(msg.view);
+    });
+    // Re-fetch the view now that the listener is attached (the first view raced).
+    await runInDurableObject(stub, async (instance: GameRoom, state) => {
+      const sws = state.getWebSockets().find((w) => {
+        const meta = w.deserializeAttachment() as SpectatorMeta | null;
+        return meta?.playerId === 'watcher';
+      });
+      (instance as unknown as { sendView(w: WebSocket): void }).sendView(sws!);
+    });
 
     const players = await runInDurableObject(stub, async (_i, state) => {
       const g = (await state.storage.get<{ players: { id: string }[] }>('game'))!;
@@ -292,17 +320,103 @@ describe('GameRoom spectators', () => {
     expect([...players].sort()).toEqual(['a', 'b']); // watcher never seated
     expect(await tokenKeys(stub)).toEqual(['a', 'b']); // watcher holds no token
 
-    // The watcher's socket is flagged spectator (so its frames are read-only),
-    // tagged with the reason so the UI can say the game's already underway.
+    // The watcher's socket is flagged waiting (so its frames are read-only) and
+    // is NOT a spectator (so it never receives the reveal).
     const watcherMeta = await runInDurableObject(stub, async (_i, state) => {
-      const ws = state.getWebSockets().find((w) => {
-        const meta = w.deserializeAttachment() as SpectatorMeta | null;
+      const w = state.getWebSockets().find((s) => {
+        const meta = s.deserializeAttachment() as SpectatorMeta | null;
         return meta?.playerId === 'watcher';
       });
-      return ws?.deserializeAttachment() as SpectatorMeta | null;
+      return w?.deserializeAttachment() as SpectatorMeta | null;
     });
-    expect(watcherMeta?.spectator).toBe(true);
-    expect(watcherMeta?.spectatorReason).toBe('in-progress');
+    expect(watcherMeta?.waiting).toBe(true);
+    expect(watcherMeta?.spectator).toBeFalsy();
+
+    // The waiting view carries no hidden information: no spectator reveal, no
+    // other player's hand, no deck order.
+    const last = views.at(-1)!;
+    expect(last.isWaiting).toBe(true);
+    expect(last.isSpectator).toBe(false);
+    expect(last.spectator).toBeNull();
+    expect(last.yourHand).toEqual([]);
+  });
+
+  it('seats a waiting newcomer when the host starts the next game (dealt a hand)', async () => {
+    const stub = env.GAME_ROOM.get(env.GAME_ROOM.idFromName('SPEC3'));
+    await connect(stub, 'SPEC3', 'a'); // host
+    await connect(stub, 'SPEC3', 'b');
+    await dispatchAs(stub, 'a', { t: 'start_game' });
+
+    // 'late' arrives mid-game and is parked as waiting.
+    await connect(stub, 'SPEC3', 'late');
+    expect(await tokenKeys(stub)).toEqual(['a', 'b']);
+
+    // Force the game to finish, then the host returns everyone to the lobby.
+    await runInDurableObject(stub, async (instance: GameRoom, state) => {
+      const inst = instance as unknown as { game: { phase: string; winnerId?: string } };
+      inst.game.phase = 'gameOver';
+      inst.game.winnerId = 'a';
+      await state.storage.put('game', inst.game);
+    });
+    await dispatchAs(stub, 'a', { t: 'play_again' });
+    expect(await gamePhase(stub)).toBe('lobby');
+
+    // The waiting newcomer is now a seated player with a token.
+    const players = await runInDurableObject(stub, async (_i, state) => {
+      const g = (await state.storage.get<{ players: { id: string }[] }>('game'))!;
+      return g.players.map((p) => p.id);
+    });
+    expect([...players].sort()).toEqual(['a', 'b', 'late']);
+    expect(await tokenKeys(stub)).toEqual(['a', 'b', 'late']);
+
+    // And the next game deals them a hand like any other seated player.
+    await dispatchAs(stub, 'a', { t: 'start_game' });
+    expect(await gamePhase(stub)).toBe('playing');
+    const lateHand = await runInDurableObject(stub, async (_i, state) => {
+      const g = (await state.storage.get<{ players: { id: string; hand: unknown[] }[] }>('game'))!;
+      return g.players.find((p) => p.id === 'late')?.hand.length ?? 0;
+    });
+    expect(lateHand).toBeGreaterThan(0);
+  });
+
+  it('still gives an eliminated seated player the unredacted reveal', async () => {
+    const stub = env.GAME_ROOM.get(env.GAME_ROOM.idFromName('SPEC4'));
+    await connect(stub, 'SPEC4', 'a'); // host
+    await connect(stub, 'SPEC4', 'b');
+    await dispatchAs(stub, 'a', { t: 'start_game' });
+
+    // Knock 'b' out (they played and saw the game, so the reveal is fair).
+    await runInDurableObject(stub, async (instance: GameRoom, state) => {
+      const inst = instance as unknown as {
+        game: { players: { id: string; alive: boolean; hand: unknown[] }[] };
+      };
+      const b = inst.game.players.find((p) => p.id === 'b')!;
+      b.alive = false;
+      b.hand = [];
+      await state.storage.put('game', inst.game);
+    });
+
+    // 'b''s own socket gets a spectator reveal (all hands + deck), reason eliminated.
+    const view = await runInDurableObject(stub, async (instance: GameRoom, state) => {
+      const captured: ClientGameView[] = [];
+      const bws = state.getWebSockets().find((w) => {
+        const meta = w.deserializeAttachment() as SocketMeta | null;
+        return meta?.playerId === 'b';
+      })!;
+      const orig = bws.send.bind(bws);
+      // Intercept the next pushed frame to read the projected view.
+      (bws as unknown as { send(d: string): void }).send = (d: string) => {
+        const m = JSON.parse(d) as { t: string; view?: ClientGameView };
+        if (m.t === 'view' && m.view) captured.push(m.view);
+        orig(d);
+      };
+      (instance as unknown as { sendView(w: WebSocket): void }).sendView(bws);
+      return captured.at(-1)!;
+    });
+    expect(view.isSpectator).toBe(true);
+    expect(view.isWaiting).toBe(false);
+    expect(view.spectator?.reason).toBe('eliminated');
+    expect(view.spectator?.hands.length).toBeGreaterThan(0);
   });
 });
 
