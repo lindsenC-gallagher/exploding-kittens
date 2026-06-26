@@ -29,6 +29,10 @@ there are no tagged releases. Entries are grouped by date instead of version.
 - Spectators can now see the full discard pile, not just the top card. It shows
   every discarded card as a compact wrapped row with the most recent card marked
   "top", alongside a running count of how many cards have been discarded.
+- When a game you're watching ends, a floating announcement now pops up naming
+  the winner (and who's left standing). Close it to drop back to the final board,
+  and the host can start another game straight from the dialog. It reappears for
+  the next game's result rather than staying dismissed.
 
 ### Changed
 

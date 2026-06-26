@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
 import { cardNames, type ClientGameView, type ClientMessage, type SpectatorReason } from '@ek/shared';
 import { Card, CardBack } from './Card.js';
 import { EventLog } from './EventLog.js';
@@ -41,6 +42,22 @@ export function SpectatorView({
   // leaving the reveal. Read-only watchers have no seat, so they're never host.
   const isHost = view.youId !== '' && view.youId === view.hostId;
   const gameOver = view.phase === 'gameOver';
+
+  // Float a dismissable winner announcement when the game ends. Keying it on
+  // the (phase, winnerId) pair means it pops once per game-over: it reopens for
+  // a fresh game (phase leaves 'gameOver', or a new winner appears) but never
+  // re-pops while we're sitting on the same finished board.
+  const winnerKey = gameOver && winner ? `${view.phase}:${winner.id}` : null;
+  const [announcedKey, setAnnouncedKey] = useState<string | null>(null);
+  const [winnerDismissed, setWinnerDismissed] = useState(false);
+  useEffect(() => {
+    if (winnerKey !== announcedKey) {
+      setAnnouncedKey(winnerKey);
+      setWinnerDismissed(false);
+    }
+  }, [winnerKey, announcedKey]);
+  const showWinnerModal = winnerKey != null && !winnerDismissed;
+  const survivors = view.players.filter((p) => p.alive);
 
   return (
     <div className="spectator">
@@ -146,6 +163,33 @@ export function SpectatorView({
       )}
 
       <EventLog view={view} lastEvents={lastEvents} />
+
+      {showWinnerModal && winner && (
+        <div className="overlay">
+          <motion.div
+            className="modal spectator-winner-modal"
+            initial={{ scale: 0.85, y: 30, opacity: 0 }}
+            animate={{ scale: 1, y: 0, opacity: 1 }}
+          >
+            <h2 className="title" style={{ fontSize: 30 }}>
+              🏆 {winner.name} wins!
+            </h2>
+            <p className="muted">
+              {survivors.length <= 1
+                ? 'Last one standing — everyone else exploded.'
+                : `Still standing: ${survivors.map((p) => p.name).join(', ')}.`}
+            </p>
+            <div className="row" style={{ justifyContent: 'center', gap: 10, marginTop: 8 }}>
+              {isHost && (
+                <button onClick={() => send({ t: 'play_again' })}>🔄 Play again</button>
+              )}
+              <button className="secondary" onClick={() => setWinnerDismissed(true)}>
+                Close
+              </button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

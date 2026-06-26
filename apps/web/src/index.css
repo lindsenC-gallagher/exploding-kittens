@@ -398,6 +398,12 @@ input:focus {
   flex-wrap: wrap;
 }
 
+/* Compact, centred winner announcement floated over the spectator reveal. */
+.spectator-winner-modal {
+  max-width: 440px;
+  text-align: center;
+}
+
 /* ---- Nope flash ---- */
 .nope-stamp {
   position: fixed;
