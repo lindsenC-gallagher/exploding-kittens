@@ -25,6 +25,22 @@ function ModalShell({ children }: { children: React.ReactNode }) {
   );
 }
 
+/** 1 -> "1st", 2 -> "2nd", 3 -> "3rd", 4 -> "4th", 11 -> "11th"… (display only). */
+function ordinal(n: number): string {
+  const rem100 = n % 100;
+  if (rem100 >= 11 && rem100 <= 13) return `${n}th`;
+  switch (n % 10) {
+    case 1:
+      return `${n}st`;
+    case 2:
+      return `${n}nd`;
+    case 3:
+      return `${n}rd`;
+    default:
+      return `${n}th`;
+  }
+}
+
 /**
  * Draw revealed an Exploding Kitten. The Defuse is mandatory and fires
  * automatically — the player's only decision is *where* to secretly slip the
@@ -68,6 +84,17 @@ export function DefusePrompt({
   }, [deckW, pos]);
 
   const commit = (p: number) => onDefuse(defuseCardId, Math.max(0, Math.min(p, max)));
+
+  // Display-only: positions are 0-based on the wire (0 = top, next draw), but
+  // players think in 1-based slots counted from the top. Slot count is max + 1.
+  const slot = pos + 1;
+  const slotCount = max + 1;
+  const posLabel =
+    pos === 0
+      ? '1st — next draw'
+      : pos === max
+        ? `${ordinal(slot)} — bottom`
+        : `${ordinal(slot)} from top`;
 
   const BACK_W = 50;
   const backCount = Math.min(Math.max(max, 1), 24); // visual only; mapping uses `max`
@@ -129,13 +156,20 @@ export function DefusePrompt({
           {/* End markers so it's obvious which side is the top vs the bottom. */}
           <div className="defuse-edge left" />
           <div className="defuse-edge right" />
-          {canDrag && <motion.div className="defuse-insert-line" style={{ x }} />}
+          {canDrag && (
+            <>
+              <motion.div className="defuse-insert-line" style={{ x }} />
+              <motion.div className="defuse-pos-badge" style={{ x }}>
+                {slot}
+              </motion.div>
+            </>
+          )}
         </div>
 
         <div className="defuse-ends">
           <span className="defuse-cap top">⬅ TOP · next draw</span>
           <span className="badge">
-            position {pos} of {max}
+            slot {slot} of {slotCount} — {posLabel}
           </span>
           <span className="defuse-cap bottom">BOTTOM ➡</span>
         </div>
