@@ -10,6 +10,11 @@ there are no tagged releases. Entries are grouped by date instead of version.
 
 ### Added
 
+- New host option "Starting cards per player". The host can now change how many
+  cards each player is dealt at the start (before their guaranteed Defuse),
+  anywhere from 1 to 10, with the faithful 7 as the default. Big hands on full
+  tables are eased back automatically so the deck never runs short and setup
+  always succeeds.
 - New host option "Smaller deck (faster games)". When on, the deck's
   non-essential cards (action cards and cat cards) are roughly halved, so big
   tables (6-9 players, which normally combine two full decks) finish sooner.

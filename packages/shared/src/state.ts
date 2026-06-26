@@ -1,3 +1,4 @@
+import { RULES } from './cards.js';
 import type { Card, CardType } from './cards.js';
 
 export type GamePhase = 'lobby' | 'playing' | 'gameOver';
@@ -59,6 +60,14 @@ export interface GameOptions {
    * Default `false` (the faithful full deck).
    */
   smallerDeck: boolean;
+  /**
+   * How many cards each player is dealt at the start (before their guaranteed
+   * Defuse is added). The faithful default is {@link RULES.startingHandSize} (7);
+   * the host may set anywhere from {@link MIN_STARTING_HAND_SIZE} to
+   * {@link MAX_STARTING_HAND_SIZE}. The deck build always provides enough cards
+   * to deal the chosen hand to every player, so setup never fails.
+   */
+  startingHandSize: number;
   /** Cosmetic card-art skin for the whole table. Default `cats`. */
   theme: Theme;
 }
@@ -66,6 +75,10 @@ export interface GameOptions {
 /** Inclusive bounds for {@link GameOptions.maxAttackTurns}. */
 export const MIN_ATTACK_TURNS = 2;
 export const MAX_ATTACK_TURNS = 10;
+
+/** Inclusive bounds for {@link GameOptions.startingHandSize} (7 is faithful). */
+export const MIN_STARTING_HAND_SIZE = 1;
+export const MAX_STARTING_HAND_SIZE = 10;
 
 /**
  * Defaults: every combo enabled and classic cat art (faithful), but Attack
@@ -79,6 +92,7 @@ export const DEFAULT_OPTIONS: GameOptions = {
   limitAttackStacking: true,
   maxAttackTurns: MIN_ATTACK_TURNS,
   smallerDeck: false,
+  startingHandSize: RULES.startingHandSize,
   theme: 'cats',
 };
 

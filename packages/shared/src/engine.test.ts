@@ -12,7 +12,13 @@ import {
   type GameAction,
 } from './engine.js';
 import type { Card } from './cards.js';
-import { MAX_ATTACK_TURNS, MIN_ATTACK_TURNS, type GameState } from './state.js';
+import {
+  MAX_ATTACK_TURNS,
+  MAX_STARTING_HAND_SIZE,
+  MIN_ATTACK_TURNS,
+  MIN_STARTING_HAND_SIZE,
+  type GameState,
+} from './state.js';
 import { projectSpectatorView, projectView, redactEventForRecipient, shouldSpectate } from './view.js';
 
 /** Build a lobby with `n` named players (p0..pn-1). */
@@ -143,6 +149,42 @@ describe('deck composition & setup', () => {
       expect(p.hand.length).toBe(RULES.startingHandSize + 1);
     }
     expect(state.drawPile.length).toBeGreaterThan(state.players.length);
+  });
+
+  it('deals a custom startingHandSize + 1 Defuse to each player', () => {
+    const r = startGame(setOptions(lobbyWith(4), { startingHandSize: 5 }), 123);
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error(r.error);
+    for (const p of r.state.players) {
+      expect(p.hand.length).toBe(5 + 1);
+      expect(p.hand.filter((c) => c.type === CardType.Defuse).length).toBeGreaterThanOrEqual(1);
+    }
+  });
+
+  it('deals the max hand size to several players without running the deck dry (safety guard)', () => {
+    const r = startGame(setOptions(lobbyWith(6), { startingHandSize: MAX_STARTING_HAND_SIZE }), 123);
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error(r.error);
+    for (const p of r.state.players) {
+      // Each player got a full (clamped) hand + their guaranteed Defuse, and no
+      // hand is empty — setup never ran the deck dry.
+      expect(p.hand.length).toBeGreaterThanOrEqual(2);
+      expect(p.hand.filter((c) => c.type === CardType.Defuse).length).toBeGreaterThanOrEqual(1);
+      expect(p.hand.some((c) => c.type === CardType.ExplodingKitten)).toBe(false);
+    }
+    // A small draw pile always survives the deal.
+    expect(r.state.drawPile.length).toBeGreaterThan(r.state.players.length);
+  });
+
+  it('smaller deck + a custom hand size still deals full hands', () => {
+    const r = startGame(setOptions(lobbyWith(5), { smallerDeck: true, startingHandSize: 4 }), 99);
+    expect(r.ok).toBe(true);
+    if (!r.ok) throw new Error(r.error);
+    for (const p of r.state.players) {
+      expect(p.hand.length).toBe(4 + 1);
+      expect(p.hand.filter((c) => c.type === CardType.Defuse).length).toBeGreaterThanOrEqual(1);
+    }
+    expect(r.state.drawPile.length).toBeGreaterThan(r.state.players.length);
   });
 
   it('caps the lobby at maxPlayers', () => {
@@ -942,7 +984,7 @@ describe('win condition', () => {
 });
 
 describe('house rules (options)', () => {
-  it('defaults every combo to enabled, attack-stacking capped at 2, and the cats theme', () => {
+  it('defaults every combo to enabled, attack-stacking capped at 2, faithful hand size, and the cats theme', () => {
     const lobby = createLobby('p0');
     expect(lobby.options).toEqual({
       allowPairSteal: true,
@@ -951,6 +993,7 @@ describe('house rules (options)', () => {
       limitAttackStacking: true,
       maxAttackTurns: MIN_ATTACK_TURNS,
       smallerDeck: false,
+      startingHandSize: RULES.startingHandSize,
       theme: 'cats',
     });
   });
@@ -978,6 +1021,20 @@ describe('house rules (options)', () => {
     expect(setOptions(lobbyWith(3), { maxAttackTurns: 0 }).options.maxAttackTurns).toBe(MIN_ATTACK_TURNS);
     expect(setOptions(lobbyWith(3), { maxAttackTurns: 999 }).options.maxAttackTurns).toBe(MAX_ATTACK_TURNS);
     expect(setOptions(lobbyWith(3), { maxAttackTurns: 5 }).options.maxAttackTurns).toBe(5);
+  });
+
+  it('clamps startingHandSize to the allowed bounds', () => {
+    expect(setOptions(lobbyWith(3), { startingHandSize: 0 }).options.startingHandSize).toBe(MIN_STARTING_HAND_SIZE);
+    expect(setOptions(lobbyWith(3), { startingHandSize: 999 }).options.startingHandSize).toBe(MAX_STARTING_HAND_SIZE);
+    expect(setOptions(lobbyWith(3), { startingHandSize: 5 }).options.startingHandSize).toBe(5);
+  });
+
+  it('carries a custom startingHandSize into the started game', () => {
+    const state = setOptions(lobbyWith(3), { startingHandSize: 3 });
+    expect(state.options.startingHandSize).toBe(3);
+    const r = startGame(state, 7);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.state.options.startingHandSize).toBe(3);
   });
 
   it('ignores option changes once the game is in progress', () => {

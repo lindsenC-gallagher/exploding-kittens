@@ -3,7 +3,9 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   AVATARS,
   MAX_ATTACK_TURNS,
+  MAX_STARTING_HAND_SIZE,
   MIN_ATTACK_TURNS,
+  MIN_STARTING_HAND_SIZE,
   RULES,
   type ClientGameView,
   type ClientMessage,
@@ -297,6 +299,48 @@ export function Lobby({ view, send }: LobbyProps) {
                 </span>
                 <span className={`rule-state ${smaller ? 'on' : ''}`}>{smaller ? 'On' : 'Off'}</span>
               </button>
+            );
+          })()}
+
+          {(() => {
+            const hand = view.options.startingHandSize ?? RULES.startingHandSize;
+            const setHand = (n: number) =>
+              send({
+                t: 'set_options',
+                options: {
+                  startingHandSize: Math.max(MIN_STARTING_HAND_SIZE, Math.min(MAX_STARTING_HAND_SIZE, n)),
+                },
+              });
+            return (
+              <div className="rule-stepper">
+                <span className="rule-text">
+                  <span className="rule-name">Starting cards per player</span>
+                  <span className="rule-hint">
+                    Cards dealt to each player before their guaranteed Defuse (faithful default 7).
+                  </span>
+                </span>
+                <div className="stepper">
+                  <button
+                    type="button"
+                    className="ghost"
+                    aria-label="Fewer starting cards"
+                    disabled={!isHost || hand <= MIN_STARTING_HAND_SIZE}
+                    onClick={isHost ? () => setHand(hand - 1) : undefined}
+                  >
+                    −
+                  </button>
+                  <span className="stepper-value">{hand}</span>
+                  <button
+                    type="button"
+                    className="ghost"
+                    aria-label="More starting cards"
+                    disabled={!isHost || hand >= MAX_STARTING_HAND_SIZE}
+                    onClick={isHost ? () => setHand(hand + 1) : undefined}
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
             );
           })()}
         </div>

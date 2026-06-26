@@ -127,6 +127,20 @@ describe('parseClientMessage — well-formed messages', () => {
     expect(parseClientMessage(j({ t: 'set_options', options: { maxAttackTurns: 2.5 } }))).toBeNull();
     expect(parseClientMessage(j({ t: 'set_options', options: { maxAttackTurns: '3' } }))).toBeNull();
   });
+
+  it('accepts an in-range startingHandSize', () => {
+    expect(parseClientMessage(j({ t: 'set_options', options: { startingHandSize: 5 } }))).toEqual({
+      t: 'set_options',
+      options: { startingHandSize: 5 },
+    });
+  });
+
+  it('rejects an out-of-range or non-integer startingHandSize', () => {
+    expect(parseClientMessage(j({ t: 'set_options', options: { startingHandSize: 0 } }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'set_options', options: { startingHandSize: 11 } }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'set_options', options: { startingHandSize: 4.5 } }))).toBeNull();
+    expect(parseClientMessage(j({ t: 'set_options', options: { startingHandSize: '7' } }))).toBeNull();
+  });
 });
 
 describe('parseClientMessage — malformed input is rejected (DoS hardening)', () => {

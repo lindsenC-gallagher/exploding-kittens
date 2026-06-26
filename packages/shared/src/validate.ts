@@ -2,7 +2,13 @@ import { isAvatar } from './avatars.js';
 import { CardType } from './cards.js';
 import type { ClientMessage } from './protocol.js';
 import type { ComboKind, GameOptions, Theme } from './state.js';
-import { MAX_ATTACK_TURNS, MIN_ATTACK_TURNS, THEMES } from './state.js';
+import {
+  MAX_ATTACK_TURNS,
+  MAX_STARTING_HAND_SIZE,
+  MIN_ATTACK_TURNS,
+  MIN_STARTING_HAND_SIZE,
+  THEMES,
+} from './state.js';
 
 /**
  * Runtime validation of untrusted client messages — the trust boundary between
@@ -86,6 +92,18 @@ export function parseClientMessage(raw: string): ClientMessage | null {
           return null;
         }
         options.maxAttackTurns = v;
+      }
+      if ('startingHandSize' in src) {
+        const v = src.startingHandSize;
+        if (
+          typeof v !== 'number' ||
+          !Number.isInteger(v) ||
+          v < MIN_STARTING_HAND_SIZE ||
+          v > MAX_STARTING_HAND_SIZE
+        ) {
+          return null;
+        }
+        options.startingHandSize = v;
       }
       if ('theme' in src) {
         if (!isStr(src.theme) || !THEME_SET.has(src.theme)) return null;

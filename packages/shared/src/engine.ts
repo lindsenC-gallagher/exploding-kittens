@@ -11,7 +11,9 @@ import { createRng, shuffle } from './rng.js';
 import {
   DEFAULT_OPTIONS,
   MAX_ATTACK_TURNS,
+  MAX_STARTING_HAND_SIZE,
   MIN_ATTACK_TURNS,
+  MIN_STARTING_HAND_SIZE,
   type ApplyResult,
   type ComboKind,
   type GameEvent,
@@ -55,14 +57,14 @@ function nonEssentialCounts(copies: number): Map<CardType, number> {
  * (largest-stack first) until the floor is met, so the trim only ever shrinks
  * toward, never past, a playable deck.
  */
-function trimNonEssentialCounts(counts: Map<CardType, number>, players: number): Map<CardType, number> {
+function trimNonEssentialCounts(counts: Map<CardType, number>, players: number, handSize: number): Map<CardType, number> {
   const trimmed = new Map<CardType, number>();
   for (const [type, count] of counts) trimmed.set(type, Math.max(1, Math.round(count / 2)));
 
-  // Floor: enough to deal startingHandSize to each player plus a small draw pile.
-  // (Exploding Kittens and Defuse are added separately and not counted here.)
+  // Floor: enough to deal the chosen hand size to each player plus a small draw
+  // pile. (Exploding Kittens and Defuse are added separately and not counted here.)
   const minDrawPile = players + 2;
-  const floor = RULES.startingHandSize * players + minDrawPile;
+  const floor = handSize * players + minDrawPile;
 
   let total = [...trimmed.values()].reduce((a, b) => a + b, 0);
   const headroom = (type: CardType) => counts.get(type)! - trimmed.get(type)!;
@@ -86,11 +88,12 @@ function trimNonEssentialCounts(counts: Map<CardType, number>, players: number):
  * `copies` combines that many decks — the faithful way to seat more than 5
  * players (one deck for 2-5, two for 6-9). When `smaller` is true the
  * non-essential pool is trimmed (see {@link trimNonEssentialCounts}) for faster
- * games; `players` lets the trim clamp so a full deal is always possible.
+ * games; `players` and `handSize` let the trim clamp so a full deal is always
+ * possible.
  */
-function buildBaseDeck(copies = 1, smaller = false, players = 0): Card[] {
+function buildBaseDeck(copies = 1, smaller = false, players = 0, handSize: number = RULES.startingHandSize): Card[] {
   const counts = nonEssentialCounts(copies);
-  const finalCounts = smaller ? trimNonEssentialCounts(counts, players) : counts;
+  const finalCounts = smaller ? trimNonEssentialCounts(counts, players, handSize) : counts;
   const cards: Card[] = [];
   for (const [type, count] of finalCounts) {
     for (let i = 0; i < count; i++) cards.push(makeCard(type));
@@ -137,6 +140,11 @@ export function setOptions(state: GameState, partial: Partial<GameOptions>): Gam
   // Keep the attack-turn cap a sane integer within bounds, whatever was sent.
   const raw = Number.isFinite(merged.maxAttackTurns) ? Math.round(merged.maxAttackTurns) : MIN_ATTACK_TURNS;
   merged.maxAttackTurns = Math.max(MIN_ATTACK_TURNS, Math.min(MAX_ATTACK_TURNS, raw));
+  // Same treatment for the starting hand size — clamp to a sane integer in bounds.
+  const rawHand = Number.isFinite(merged.startingHandSize)
+    ? Math.round(merged.startingHandSize)
+    : RULES.startingHandSize;
+  merged.startingHandSize = Math.max(MIN_STARTING_HAND_SIZE, Math.min(MAX_STARTING_HAND_SIZE, rawHand));
   return {
     ...state,
     options: merged,
@@ -179,11 +187,19 @@ export function startGame(state: GameState, seed: number): ApplyResult {
   const rng = createRng(seed);
   // The host's "smaller deck" rule trims the non-essential pool for faster games;
   // the trim self-clamps so a full deal is always possible (see buildBaseDeck).
-  let deck = shuffle(buildBaseDeck(copies, gameOptions(state).smallerDeck, n), rng);
+  const handSize = gameOptions(state).startingHandSize;
+  let deck = shuffle(buildBaseDeck(copies, gameOptions(state).smallerDeck, n, handSize), rng);
 
-  // Deal startingHandSize cards to each player, then give each one Defuse.
+  // Safety guard: a very large hand on a full table can ask for more
+  // non-essential cards than even the untrimmed pool holds. Clamp the dealt hand
+  // so we always leave a small draw pile, so setup can never run the deck dry.
+  const minDrawPile = n + 2;
+  const dealable = Math.max(1, Math.floor((deck.length - minDrawPile) / n));
+  const dealtHandSize = Math.min(handSize, dealable);
+
+  // Deal dealtHandSize cards to each player, then give each one Defuse.
   const players = state.players.map((p) => ({ ...p, hand: [] as Card[], alive: true, ready: true }));
-  for (let i = 0; i < RULES.startingHandSize; i++) {
+  for (let i = 0; i < dealtHandSize; i++) {
     for (const p of players) {
       const card = deck.pop();
       if (card) p.hand.push(card);
