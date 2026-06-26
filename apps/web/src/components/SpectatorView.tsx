@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { cardNames, type ClientGameView, type ClientMessage, type SpectatorReason } from '@ek/shared';
 import { Card, CardBack } from './Card.js';
+import { EventLog } from './EventLog.js';
+import type { GameEventEnvelope } from '../hooks/useGameSocket.js';
 import { useTheme } from '../theme.js';
 
 /** Short banner clause explaining why this viewer is spectating. */
@@ -19,10 +21,12 @@ const REASON_TEXT: Record<SpectatorReason, string> = {
 export function SpectatorView({
   view,
   send,
+  lastEvents,
   onLeave,
 }: {
   view: ClientGameView;
   send: (msg: ClientMessage) => void;
+  lastEvents: GameEventEnvelope | null;
   onLeave: () => void;
 }) {
   const theme = useTheme();
@@ -128,6 +132,8 @@ export function SpectatorView({
           )}
         </div>
       )}
+
+      <EventLog view={view} lastEvents={lastEvents} />
     </div>
   );
 }

@@ -8,6 +8,11 @@ there are no tagged releases. Entries are grouped by date instead of version.
 
 ## [Unreleased]
 
+### Added
+
+- Spectators can now see the live game log while watching, the same running
+  feed of plays, draws, Nopes and explosions that seated players get.
+
 ### Changed
 
 - You now drop into spectator mode automatically: when you're knocked out of a

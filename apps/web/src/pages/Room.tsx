@@ -136,7 +136,7 @@ function ConnectedRoom({
       <ChangelogButton right={116} />
 
       {sock.view.isSpectator ? (
-        <SpectatorView view={sock.view} send={sock.send} onLeave={onLeave} />
+        <SpectatorView view={sock.view} send={sock.send} lastEvents={sock.lastEvents} onLeave={onLeave} />
       ) : sock.view.phase === 'lobby' ? (
         <Lobby view={sock.view} send={sock.send} />
       ) : (

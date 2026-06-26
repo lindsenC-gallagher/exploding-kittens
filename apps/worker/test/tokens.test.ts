@@ -26,6 +26,24 @@ async function connectSpectator(stub: DurableObjectStub, code: string, pid: stri
   res.webSocket?.accept();
 }
 
+/**
+ * Open a spectator socket and return its client end so a test can listen for the
+ * server-pushed frames (views, events) the watcher receives.
+ */
+async function connectSpectatorSocket(
+  stub: DurableObjectStub,
+  code: string,
+  pid: string,
+): Promise<WebSocket> {
+  const res = await stub.fetch(`https://room/${code}/ws?pid=${pid}&name=${pid}&spectate=1`, {
+    headers: { Upgrade: 'websocket' },
+  });
+  expect(res.status).toBe(101);
+  const ws = res.webSocket!;
+  ws.accept();
+  return ws;
+}
+
 /** Read the persisted per-seat token map straight out of DO storage. */
 function tokenKeys(stub: DurableObjectStub): Promise<string[]> {
   return runInDurableObject(stub, async (_instance, state) => {
@@ -231,6 +249,30 @@ describe('GameRoom spectators', () => {
     });
     // Nothing changed.
     expect(await gamePhase(stub)).toBe('playing');
+  });
+
+  it('receives the game-event stream so the spectator can show the game log', async () => {
+    const stub = env.GAME_ROOM.get(env.GAME_ROOM.idFromName('SPECLOG1'));
+    await connect(stub, 'SPECLOG1', 'a'); // host
+    await connect(stub, 'SPECLOG1', 'b');
+
+    // Spectator joins before the game starts and listens for pushed frames.
+    const sock = await connectSpectatorSocket(stub, 'SPECLOG1', 'watcher');
+    const events: unknown[][] = [];
+    sock.addEventListener('message', (ev) => {
+      const msg = JSON.parse((ev as MessageEvent).data as string) as {
+        t: string;
+        events?: unknown[];
+      };
+      if (msg.t === 'events' && msg.events) events.push(msg.events);
+    });
+
+    // Starting the game broadcasts a `game_started` event to every socket,
+    // spectators included — that's what feeds the spectator's game log.
+    await dispatchAs(stub, 'a', { t: 'start_game' });
+
+    const flat = events.flat() as { type: string }[];
+    expect(flat.some((e) => e.type === 'game_started')).toBe(true);
   });
 
   it('auto-spectates a seat-less join to an in-progress room (no 403)', async () => {
