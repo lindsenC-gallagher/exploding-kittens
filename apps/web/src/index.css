@@ -969,12 +969,18 @@ input:focus {
   top: 0;
   left: 0;
   right: 0;
-  z-index: 60;
+  /* Below the floating fabs (help/changelog, z-index 44) so it never covers or
+     blocks them, but still above the spectator's player/deck content. */
+  z-index: 40;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: center;
   gap: 4px;
-  padding: 8px 14px;
+  /* Reserve room on the right for the fab cluster (changelog + help) so the
+     banner's own text/buttons never tuck underneath them. Symmetric left pad
+     keeps the centred content visually balanced. */
+  padding: 8px 168px 8px 14px;
   font-weight: 800;
   background: linear-gradient(180deg, var(--accent), #c23b69);
   color: #fff;

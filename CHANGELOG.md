@@ -27,6 +27,11 @@ there are no tagged releases. Entries are grouped by date instead of version.
 
 ### Fixed
 
+- The Spectating banner no longer covers the floating Help and What's-new
+  buttons in the top-right corner, so they stay visible and clickable while you
+  watch. The banner now sits behind those buttons and reserves room for them, on
+  both desktop and phone widths. The bottom-right game log was already clear of
+  the banner.
 - On phones the "Phew — Defused!" dialog no longer runs off the screen. Its
   title, the deck end-labels, and the Top/Middle/Bottom shortcut buttons were
   being clipped past the edges on narrow screens. The dialog now shrinks its
