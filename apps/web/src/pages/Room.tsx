@@ -133,7 +133,7 @@ function ConnectedRoom({
       )}
 
       <HelpButton view={sock.view} />
-      <ChangelogButton right={116} />
+      <ChangelogButton right={168} />
 
       {sock.view.isSpectator ? (
         <SpectatorView view={sock.view} send={sock.send} lastEvents={sock.lastEvents} onLeave={onLeave} />

@@ -927,11 +927,11 @@ input:focus {
   opacity: 0.7;
 }
 
-/* ---- mute toggle ---- */
-.mute-fab {
+/* ---- mute toggles (sound effects + music) ---- */
+.mute-fab,
+.music-fab {
   position: fixed;
   top: 12px;
-  right: 64px;
   z-index: 44;
   width: 42px;
   height: 42px;
@@ -941,6 +941,12 @@ input:focus {
   font-weight: 900;
   background: linear-gradient(180deg, #4a3d7a, #362c5c);
   box-shadow: 0 6px 0 #241c40, 0 10px 20px rgba(0, 0, 0, 0.3);
+}
+.mute-fab {
+  right: 64px;
+}
+.music-fab {
+  right: 116px;
 }
 
 /* ---- spectator mode ---- */
@@ -977,10 +983,10 @@ input:focus {
   align-items: center;
   justify-content: center;
   gap: 4px;
-  /* Reserve room on the right for the fab cluster (changelog + help) so the
-     banner's own text/buttons never tuck underneath them. Symmetric left pad
-     keeps the centred content visually balanced. */
-  padding: 8px 168px 8px 14px;
+  /* Reserve room on the right for the fab cluster (help + SFX + music +
+     changelog) so the banner's own text/buttons never tuck underneath them.
+     Symmetric left pad keeps the centred content visually balanced. */
+  padding: 8px 220px 8px 14px;
   font-weight: 800;
   background: linear-gradient(180deg, var(--accent), #c23b69);
   color: #fff;
@@ -1327,6 +1333,7 @@ input:focus {
   }
   .help-fab,
   .mute-fab,
+  .music-fab,
   .changelog-fab {
     width: 38px;
     height: 38px;

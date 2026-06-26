@@ -10,6 +10,9 @@ there are no tagged releases. Entries are grouped by date instead of version.
 
 ### Added
 
+- You can now mute background music and sound effects separately. The top-right
+  cluster has two toggles: a speaker for sound effects and a music note for the
+  background loop. Each remembers its own on/off setting between visits.
 - Spectators can now see the live game log while watching, the same running
   feed of plays, draws, Nopes and explosions that seated players get.
 

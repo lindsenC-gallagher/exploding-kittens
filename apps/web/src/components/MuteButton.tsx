@@ -1,22 +1,47 @@
 import { useEffect, useState } from 'react';
-import { isMuted, onMuteChange, playSound, toggleMuted } from '../lib/sound.js';
+import {
+  isMusicMuted,
+  isSfxMuted,
+  onMusicMuteChange,
+  onSfxMuteChange,
+  playSound,
+  toggleMusicMuted,
+  toggleSfxMuted,
+} from '../lib/sound.js';
 
-/** Floating speaker toggle that mutes/unmutes all game sound effects. */
+/**
+ * Two floating toggles in the top-right cluster: one for sound effects
+ * (speaker) and one for background music (note). Each reflects and toggles its
+ * own independent mute channel.
+ */
 export function MuteButton() {
-  const [muted, setMuted] = useState(isMuted());
-  useEffect(() => onMuteChange(setMuted), []);
+  const [sfxMuted, setSfxMuted] = useState(isSfxMuted());
+  const [musicMuted, setMusicMuted] = useState(isMusicMuted());
+  useEffect(() => onSfxMuteChange(setSfxMuted), []);
+  useEffect(() => onMusicMuteChange(setMusicMuted), []);
   return (
-    <button
-      className="mute-fab"
-      aria-label={muted ? 'Unmute sound effects' : 'Mute sound effects'}
-      aria-pressed={muted}
-      title={muted ? 'Sound off' : 'Sound on'}
-      onClick={() => {
-        const nowMuted = toggleMuted();
-        if (!nowMuted) playSound('click'); // confirm audio is back on
-      }}
-    >
-      {muted ? '🔇' : '🔊'}
-    </button>
+    <>
+      <button
+        className="mute-fab"
+        aria-label={sfxMuted ? 'Unmute sound effects' : 'Mute sound effects'}
+        aria-pressed={sfxMuted}
+        title={sfxMuted ? 'Sound effects off' : 'Sound effects on'}
+        onClick={() => {
+          const nowMuted = toggleSfxMuted();
+          if (!nowMuted) playSound('click'); // confirm effects are back on
+        }}
+      >
+        {sfxMuted ? '🔇' : '🔊'}
+      </button>
+      <button
+        className="music-fab"
+        aria-label={musicMuted ? 'Unmute music' : 'Mute music'}
+        aria-pressed={musicMuted}
+        title={musicMuted ? 'Music off' : 'Music on'}
+        onClick={() => toggleMusicMuted()}
+      >
+        {musicMuted ? '🔕' : '🎵'}
+      </button>
+    </>
   );
 }

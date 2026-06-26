@@ -4,8 +4,11 @@
  * works offline. A single AudioContext is created lazily on first use — by then
  * the player has already clicked (to join/start), satisfying the autoplay gate.
  *
- * Mute state is persisted in localStorage and exposed via a tiny subscribe API
- * so a React control can reflect/toggle it.
+ * Sound effects and background music are two independent mute channels, each
+ * persisted in localStorage and exposed via a tiny subscribe API so React
+ * controls can reflect/toggle them separately. An older combined `ek_muted`
+ * preference, if present, seeds both channels so returning players keep their
+ * "everything off" setting.
  */
 
 export type SoundName =
@@ -21,47 +24,81 @@ export type SoundName =
   | 'win'
   | 'click';
 
-const MUTE_KEY = 'ek_muted';
+// Legacy combined key, kept only to seed the split channels for returning users.
+const LEGACY_MUTE_KEY = 'ek_muted';
+const SFX_MUTE_KEY = 'ek_muted_sfx';
+const MUSIC_MUTE_KEY = 'ek_muted_music';
 
 let ctx: AudioContext | null = null;
-const listeners = new Set<(muted: boolean) => void>();
 
-function readMuted(): boolean {
+/** Read a per-channel mute flag, falling back to the legacy combined flag. */
+function readMutedKey(key: string): boolean {
   try {
-    return localStorage.getItem(MUTE_KEY) === '1';
+    const v = localStorage.getItem(key);
+    if (v !== null) return v === '1';
+    return localStorage.getItem(LEGACY_MUTE_KEY) === '1';
   } catch {
     return false;
   }
 }
 
-let muted = readMuted();
-
-export function isMuted(): boolean {
-  return muted;
-}
-
-export function setMuted(next: boolean): void {
-  muted = next;
+function writeMutedKey(key: string, next: boolean): void {
   try {
-    localStorage.setItem(MUTE_KEY, next ? '1' : '0');
+    localStorage.setItem(key, next ? '1' : '0');
   } catch {
     /* storage unavailable — keep the in-memory flag */
   }
-  // Silence/resume the background music loop to match the mute state.
+}
+
+let sfxMuted = readMutedKey(SFX_MUTE_KEY);
+let musicMuted = readMutedKey(MUSIC_MUTE_KEY);
+
+const sfxListeners = new Set<(muted: boolean) => void>();
+const musicListeners = new Set<(muted: boolean) => void>();
+
+export function isSfxMuted(): boolean {
+  return sfxMuted;
+}
+
+export function setSfxMuted(next: boolean): void {
+  sfxMuted = next;
+  writeMutedKey(SFX_MUTE_KEY, next);
+  for (const l of sfxListeners) l(next);
+}
+
+export function toggleSfxMuted(): boolean {
+  setSfxMuted(!sfxMuted);
+  return sfxMuted;
+}
+
+/** Subscribe to sound-effect mute changes; returns an unsubscribe fn. */
+export function onSfxMuteChange(fn: (muted: boolean) => void): () => void {
+  sfxListeners.add(fn);
+  return () => sfxListeners.delete(fn);
+}
+
+export function isMusicMuted(): boolean {
+  return musicMuted;
+}
+
+export function setMusicMuted(next: boolean): void {
+  musicMuted = next;
+  writeMutedKey(MUSIC_MUTE_KEY, next);
+  // Silence/resume the background music loop to match its mute state.
   if (next) stopMusicTimer();
   else if (musicPlaying) musicLoop();
-  for (const l of listeners) l(next);
+  for (const l of musicListeners) l(next);
 }
 
-export function toggleMuted(): boolean {
-  setMuted(!muted);
-  return muted;
+export function toggleMusicMuted(): boolean {
+  setMusicMuted(!musicMuted);
+  return musicMuted;
 }
 
-/** Subscribe to mute changes; returns an unsubscribe fn. */
-export function onMuteChange(fn: (muted: boolean) => void): () => void {
-  listeners.add(fn);
-  return () => listeners.delete(fn);
+/** Subscribe to music mute changes; returns an unsubscribe fn. */
+export function onMusicMuteChange(fn: (muted: boolean) => void): () => void {
+  musicListeners.add(fn);
+  return () => musicListeners.delete(fn);
 }
 
 function audio(): AudioContext | null {
@@ -147,7 +184,7 @@ const RECIPES: Record<SoundName, Blip[]> = {
 };
 
 export function playSound(name: SoundName): void {
-  if (muted) return;
+  if (sfxMuted) return;
   const ac = audio();
   if (!ac) return;
   const start = ac.currentTime + 0.01;
@@ -156,7 +193,8 @@ export function playSound(name: SoundName): void {
 
 // ---------------------------------------------------------------------------
 // Background music — a soft, synthesized loop that differs by theme. No audio
-// assets; it shares the mute state and AudioContext with the sound effects.
+// assets; it shares the AudioContext with the sound effects but has its own
+// mute channel.
 // ---------------------------------------------------------------------------
 
 export type MusicTheme = 'cats' | 'dogs';
@@ -212,7 +250,7 @@ function scheduleBar(ac: AudioContext, theme: MusicTheme): number {
 }
 
 function musicLoop(): void {
-  if (!musicPlaying || muted || !musicTheme) return;
+  if (!musicPlaying || musicMuted || !musicTheme) return;
   const ac = audio();
   if (!ac) return;
   const barLen = scheduleBar(ac, musicTheme);
@@ -231,7 +269,7 @@ export function startMusic(theme: MusicTheme): void {
   musicTheme = theme;
   if (musicPlaying) return; // already looping; the new theme applies next bar
   musicPlaying = true;
-  if (!muted) musicLoop();
+  if (!musicMuted) musicLoop();
 }
 
 /** Stop the background music loop. */
