@@ -22,6 +22,10 @@ there are no tagged releases. Entries are grouped by date instead of version.
 
 ### Fixed
 
+- On phones the "Phew — Defused!" dialog no longer runs off the screen. Its
+  title, the deck end-labels, and the Top/Middle/Bottom shortcut buttons were
+  being clipped past the edges on narrow screens. The dialog now shrinks its
+  padding and lets the buttons and labels wrap so everything stays on-screen.
 - Getting knocked out by the explosion that ends the game now shows you the
   spectator reveal too. Previously the player whose blast ended the game (and
   both players in a two-player game) jumped straight to the win screen and never

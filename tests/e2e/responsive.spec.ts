@@ -82,3 +82,42 @@ for (const vp of VIEWPORTS) {
     }
   });
 }
+
+/**
+ * The Defuse prompt is the widest modal — three fixed-width shortcut buttons
+ * (Top/Middle/Bottom) plus two non-wrapping end-caps. With no wrapping it grew
+ * to ~450px and clipped its title and the Top/Bottom buttons off both edges of
+ * a phone. Reaching a real Defuse in-game is non-deterministic (you must draw a
+ * kitten), so we inject the modal's exact markup against the shipped CSS and
+ * assert nothing spills past the viewport.
+ */
+const DEFUSE_MODAL_HTML = `
+  <div class="overlay" id="probe-defuse"><div class="modal">
+    <h2 class="title" style="font-size:28px">🧯 Phew — Defused!</h2>
+    <p class="muted">Your Defuse fired automatically and saved you. Now secretly hide the Exploding Kitten back in the deck — <b>drag it onto the deck and drop</b> to bury it anywhere, or tap a shortcut.</p>
+    <div class="defuse-deck-area">
+      <div class="defuse-kitten-track"><div class="defuse-kitten"><div class="defuse-kitten-center"><div class="card"><span class="emoji">💥</span><span class="name">Exploding Kitten</span></div><div class="defuse-arrow">⬇</div></div></div></div>
+      <div class="defuse-deck"><div class="defuse-edge left"></div><div class="defuse-edge right"></div></div>
+      <div class="defuse-ends"><span class="defuse-cap top">⬅ TOP · next draw</span><span class="badge">position 18 of 37</span><span class="defuse-cap bottom">BOTTOM ➡</span></div>
+    </div>
+    <div class="row" style="justify-content:center; gap:10px"><button>🔝 Top (evil)</button><button class="secondary">📍 Middle</button><button class="secondary">Bottom</button></div>
+  </div></div>`;
+
+for (const vp of VIEWPORTS) {
+  test(`Defuse modal fits ${vp.name} (${vp.width}px) without clipping`, async ({ page }) => {
+    await page.setViewportSize({ width: vp.width, height: vp.height });
+    await page.goto('/');
+    const overflow = await page.evaluate((html) => {
+      const host = document.createElement('div');
+      host.innerHTML = html;
+      document.body.appendChild(host);
+      const vw = window.innerWidth;
+      // Every visible element in the modal must stay within the viewport.
+      const bad = [...host.querySelectorAll('*')]
+        .map((el) => el.getBoundingClientRect())
+        .filter((r) => r.width > 0 && r.height > 0 && (r.left < -1 || r.right > vw + 1)).length;
+      return bad;
+    }, DEFUSE_MODAL_HTML);
+    expect(overflow, 'no modal element should spill past the viewport edge').toBe(0);
+  });
+}

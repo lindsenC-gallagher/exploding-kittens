@@ -391,6 +391,12 @@ input:focus {
   width: 100%;
   box-shadow: 0 30px 80px rgba(0, 0, 0, 0.6);
 }
+/* Button rows inside a modal must wrap, or a row of fixed-width buttons (e.g.
+   the Defuse Top/Middle/Bottom shortcuts) forces the modal wider than a phone
+   viewport and clips its edges. */
+.modal .row {
+  flex-wrap: wrap;
+}
 
 /* ---- Nope flash ---- */
 .nope-stamp {
@@ -1294,6 +1300,20 @@ input:focus {
   }
   .panel {
     padding: 18px;
+  }
+  /* Modals: trim padding and let the Defuse deck/end-caps reflow so the dialog
+     never grows past the phone viewport (was clipping the title and the
+     Top/Bottom shortcuts off either edge). */
+  .modal {
+    padding: 20px 16px;
+  }
+  .defuse-deck-area {
+    padding: 0 16px;
+  }
+  .defuse-ends {
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 6px;
   }
   .log {
     width: min(300px, calc(100vw - 12px));
