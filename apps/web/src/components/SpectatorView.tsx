@@ -122,12 +122,24 @@ export function SpectatorView({
               <span className="muted">click to peek the order (top first)</span>
             </div>
           )}
-          {view.discardTop && (
-            <div style={{ marginTop: 12 }}>
+          {view.discardPile.length > 0 && (
+            <div className="spectator-discard">
               <div className="muted" style={{ fontWeight: 800, marginBottom: 6 }}>
-                🗑️ Discard top
+                🗑️ Discard pile · {view.discardPile.length}{' '}
+                {view.discardPile.length === 1 ? 'card' : 'cards'}
               </div>
-              <Card type={view.discardTop.type} />
+              <div className="spectator-deck-row">
+                {/* Pile is stored oldest-first, so reverse to show the most
+                    recently discarded (top) card first. */}
+                {[...view.discardPile].reverse().map((c, i) => (
+                  <div key={c.id} className="spectator-deck-card" title={cardNames(theme)[c.type]}>
+                    <span className="badge" style={{ marginBottom: 4 }}>
+                      {i === 0 ? 'top' : `-${i}`}
+                    </span>
+                    <Card type={c.type} />
+                  </div>
+                ))}
+              </div>
             </div>
           )}
         </div>

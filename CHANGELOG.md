@@ -21,6 +21,9 @@ there are no tagged releases. Entries are grouped by date instead of version.
   background loop. Each remembers its own on/off setting between visits.
 - Spectators can now see the live game log while watching, the same running
   feed of plays, draws, Nopes and explosions that seated players get.
+- Spectators can now see the full discard pile, not just the top card. It shows
+  every discarded card as a compact wrapped row with the most recent card marked
+  "top", alongside a running count of how many cards have been discarded.
 
 ### Changed
 

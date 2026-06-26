@@ -1090,6 +1090,13 @@ input:focus {
   align-items: center;
   flex-shrink: 0;
 }
+.spectator-discard {
+  margin-top: 14px;
+}
+.spectator-discard .spectator-deck-row {
+  flex-wrap: wrap;
+  overflow-x: visible;
+}
 
 /* ---- changelog ("what's new") ---- */
 .changelog-fab {
