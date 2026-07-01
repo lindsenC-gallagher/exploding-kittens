@@ -2,6 +2,7 @@ import { isAvatar } from './avatars.js';
 import { CardType } from './cards.js';
 import type { ClientMessage } from './protocol.js';
 import type { ComboKind, GameOptions, Theme } from './state.js';
+import { isBotDifficulty } from './state.js';
 import {
   MAX_ATTACK_TURNS,
   MAX_STARTING_HAND_SIZE,
@@ -111,6 +112,14 @@ export function parseClientMessage(raw: string): ClientMessage | null {
       }
       return { t: 'set_options', options };
     }
+
+    case 'add_bot':
+      if (!isBotDifficulty(m.difficulty)) return null;
+      return { t: 'add_bot', difficulty: m.difficulty };
+
+    case 'remove_bot':
+      if (!isStr(m.botId)) return null;
+      return { t: 'remove_bot', botId: m.botId };
 
     case 'start_game':
       return { t: 'start_game' };

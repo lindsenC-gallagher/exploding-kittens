@@ -15,6 +15,7 @@ import {
   MIN_ATTACK_TURNS,
   MIN_STARTING_HAND_SIZE,
   type ApplyResult,
+  type BotDifficulty,
   type ComboKind,
   type GameEvent,
   type GameOptions,
@@ -168,6 +169,69 @@ export function addPlayer(state: GameState, id: string, name: string, avatar?: s
   const players = [...state.players, player];
   const hostId = state.players.length === 0 ? id : state.hostId;
   return { ok: true, state: { ...state, players, hostId, version: state.version + 1 }, events: [] };
+}
+
+/** Cat-themed names for bot seats, cycled (with a numeric suffix) when exhausted. */
+const BOT_NAMES = [
+  'Whiskers',
+  'Mittens',
+  'Pounce',
+  'Biscuit',
+  'Noodle',
+  'Pickles',
+  'Waffles',
+  'Sir Fluff',
+] as const;
+
+/** Pick a bot display name not already used at the table (falling back to a numbered one). */
+function nextBotName(state: GameState): string {
+  const taken = new Set(state.players.map((p) => p.name));
+  const free = BOT_NAMES.find((n) => !taken.has(n));
+  if (free) return free;
+  for (let i = 2; ; i++) {
+    const candidate = `${BOT_NAMES[i % BOT_NAMES.length]} ${i}`;
+    if (!taken.has(candidate)) return candidate;
+  }
+}
+
+/**
+ * Add a computer-controlled player in the lobby. A bot holds a real seat but has
+ * no WebSocket: the server drives it through the same redacted view + action API
+ * a human uses (see the bot module), so it can never peek at the deck or another
+ * player's hand. The host supplies the difficulty; the id is server-generated.
+ */
+export function addBot(state: GameState, id: string, difficulty: BotDifficulty): ApplyResult {
+  if (state.phase !== 'lobby') return { ok: false, error: 'Game already started' };
+  if (state.players.length >= RULES.maxPlayers) return { ok: false, error: 'Lobby full' };
+  const player: PlayerState = {
+    id,
+    name: nextBotName(state),
+    // A robot face (outside the human AVATARS set) makes bot seats obvious everywhere.
+    avatar: '🤖',
+    hand: [],
+    alive: true,
+    connected: true,
+    ready: true,
+    isBot: true,
+    botDifficulty: difficulty,
+  };
+  return {
+    ok: true,
+    state: { ...state, players: [...state.players, player], version: state.version + 1 },
+    events: [],
+  };
+}
+
+/** Remove a bot seat in the lobby. No-op for a non-bot id or outside the lobby. */
+export function removeBot(state: GameState, botId: string): GameState {
+  if (state.phase !== 'lobby') return state;
+  const target = state.players.find((p) => p.id === botId);
+  if (!target || !target.isBot) return state;
+  return {
+    ...state,
+    players: state.players.filter((p) => p.id !== botId),
+    version: state.version + 1,
+  };
 }
 
 /**

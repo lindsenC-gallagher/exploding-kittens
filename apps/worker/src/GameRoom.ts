@@ -1,8 +1,11 @@
 import {
+  addBot,
   addPlayer,
   applyAction,
+  botThinkMs,
   canRespondToPending,
   createLobby,
+  decideBotMove,
   isAvatar,
   pickAvatar,
   parseClientMessage,
@@ -10,6 +13,7 @@ import {
   projectView,
   projectWaitingView,
   redactEventForRecipient,
+  removeBot,
   reorderHand,
   resetToLobby,
   setOptions,
@@ -18,9 +22,11 @@ import {
   RULES,
   CardType,
   type ClientMessage,
+  type GameAction,
   type SpectatorReason,
   type GameEvent,
   type GameState,
+  type PlayerState,
   type ServerMessage,
 } from '@ek/shared';
 import type { Env } from './index.js';
@@ -40,7 +46,12 @@ interface SocketMeta {
 }
 
 /** A scheduled timer's purpose, so the alarm knows what to do when it fires. */
-type TimerKind = 'nope' | 'awaiting' | 'turn';
+type TimerKind = 'nope' | 'awaiting' | 'turn' | 'bot';
+
+/** Random in [0, 1) from crypto entropy, for bot decisions made in the room. */
+function botRand(): number {
+  return crypto.getRandomValues(new Uint32Array(1))[0] / 2 ** 32;
+}
 
 function cryptoSeed(): number {
   return crypto.getRandomValues(new Uint32Array(1))[0];
@@ -115,7 +126,14 @@ export class GameRoom {
     this.stealPickableAt = (await this.ctx.storage.get<number>('stealPickableAt')) ?? null;
     this.loaded = true;
     // Re-arm a timer if a timed state survived hibernation without a live alarm.
-    if (this.game.pending || this.game.awaiting || this.disconnectedCurrentPlayer()) {
+    // The bot check covers a bot whose plain turn is up (no pending/awaiting),
+    // which the other conditions wouldn't catch.
+    if (
+      this.game.pending ||
+      this.game.awaiting ||
+      this.disconnectedCurrentPlayer() ||
+      (this.hasBots() && this.hasConnectedHuman())
+    ) {
       await this.settle();
     }
   }
@@ -353,9 +371,13 @@ export class GameRoom {
     if (!player) return;
     player.connected = false;
     if (this.game.phase === 'lobby') {
-      // In the lobby, drop the player entirely and reassign host if needed.
+      // In the lobby, drop the player entirely and reassign host if needed. A bot
+      // can never be host (it can't press Start), so hand it to another human.
       this.game.players = this.game.players.filter((p) => p.id !== pid);
-      if (this.game.hostId === pid) this.game.hostId = this.game.players[0]?.id ?? '';
+      if (this.game.hostId === pid) {
+        const nextHost = this.game.players.find((p) => !p.isBot) ?? this.game.players[0];
+        this.game.hostId = nextHost?.id ?? '';
+      }
       // Release the seat token too; otherwise lobby join/leave churn grows the
       // persisted token map without bound (a fresh pid needs no token to join).
       if (this.tokens[pid]) {
@@ -416,6 +438,29 @@ export class GameRoom {
         // House rules are the host's call and only adjustable before kick-off.
         if (pid !== this.game.hostId || this.game.phase !== 'lobby') return;
         this.game = setOptions(this.game, msg.options);
+        await this.persist();
+        this.broadcastViews();
+        return;
+      }
+
+      case 'add_bot': {
+        // Only the host, only in the lobby. The bot's id is minted server-side so
+        // a client can never forge one or impersonate a bot's seat.
+        if (pid !== this.game.hostId || this.game.phase !== 'lobby') return;
+        const r = addBot(this.game, `bot:${crypto.randomUUID()}`, msg.difficulty);
+        if (!r.ok) {
+          this.send(ws, { t: 'error', message: r.error });
+          return;
+        }
+        this.game = r.state;
+        await this.persist();
+        this.broadcastViews();
+        return;
+      }
+
+      case 'remove_bot': {
+        if (pid !== this.game.hostId || this.game.phase !== 'lobby') return;
+        this.game = removeBot(this.game, msg.botId);
         await this.persist();
         this.broadcastViews();
         return;
@@ -577,7 +622,86 @@ export class GameRoom {
     return true;
   }
 
-  // ---- Timers (single alarm for Nope window / awaiting / turn) -------------
+  // ---- Bots ----------------------------------------------------------------
+
+  /** Any human still watching/playing? Bots only act while someone's here to see it. */
+  private hasConnectedHuman(): boolean {
+    return this.game.players.some((p) => !p.isBot && p.connected);
+  }
+
+  private hasBots(): boolean {
+    return this.game.players.some((p) => p.isBot);
+  }
+
+  /**
+   * The move a bot should make right now, computed from the SAME redacted view a
+   * human gets (so a bot can never see hidden cards). Scans bots in seat order
+   * and returns the first that has something to do — its own turn, a forced
+   * choice aimed at it, or a Nope it wants to throw — or null if no bot should
+   * act. Cheap and bounded by the (small) number of bots.
+   */
+  private findBotMove(): { bot: PlayerState; action: GameAction } | null {
+    if (this.game.phase !== 'playing') return null;
+    for (const bot of this.game.players) {
+      if (!bot.isBot || !bot.alive) continue;
+      const view = projectView(this.game, this.roomCode, bot.id, this.nopeDeadline, this.stealPickableAt);
+      const msg = decideBotMove(view, bot.botDifficulty ?? 'medium', botRand);
+      if (!msg) continue;
+      const action = this.clientMsgToAction(bot.id, msg);
+      if (action) return { bot, action };
+    }
+    return null;
+  }
+
+  /** Translate a bot's client message into an engine action (same shape humans use). */
+  private clientMsgToAction(pid: string, msg: ClientMessage): GameAction | null {
+    switch (msg.t) {
+      case 'play':
+        return {
+          type: 'play',
+          playerId: pid,
+          cardIds: msg.cardIds,
+          combo: msg.combo,
+          target: msg.target,
+          namedCard: msg.namedCard,
+          discardCardId: msg.discardCardId,
+        };
+      case 'nope':
+        return { type: 'nope', playerId: pid, cardId: msg.cardId };
+      case 'draw':
+        return { type: 'draw', playerId: pid };
+      case 'defuse':
+        return { type: 'defuse', playerId: pid, cardId: msg.cardId, insertPosition: msg.insertPosition };
+      case 'give_favor_card':
+        return { type: 'give_favor_card', playerId: pid, cardId: msg.cardId };
+      case 'steal_pick':
+        return { type: 'steal_pick', playerId: pid, cardIndex: msg.cardIndex };
+      default:
+        return null;
+    }
+  }
+
+  /**
+   * Run a bot's chosen move, with a fail-safe: if the engine rejects it (which
+   * shouldn't happen, the bot plays by the rules) we fall back to a guaranteed
+   * legal action so a bot can never wedge the table into a no-progress loop.
+   */
+  private async runBotMove(move: { bot: PlayerState; action: GameAction }): Promise<void> {
+    const applied = await this.runAction(null, move.action);
+    if (applied) return;
+    if (this.game.pending) {
+      await this.resolvePendingNow();
+    } else if (this.game.awaiting) {
+      await this.autoResolveAwaiting();
+    } else {
+      const cur = this.game.players[this.game.currentPlayerIndex];
+      if (cur?.id === move.bot.id && this.game.drawPile.length > 0) {
+        await this.runAction(null, { type: 'draw', playerId: move.bot.id });
+      }
+    }
+  }
+
+  // ---- Timers (single alarm for Nope window / awaiting / turn / bot) --------
 
   private disconnectedCurrentPlayer(): boolean {
     if (this.game.phase !== 'playing' || this.game.pending || this.game.awaiting) return false;
@@ -603,6 +727,12 @@ export class GameRoom {
       await this.ctx.storage.delete('stealPickableAt');
     }
 
+    // Bots only take their turns while a human is connected to watch — this stops
+    // a room of bots from playing on forever to an empty table.
+    const botsActive = this.hasBots() && this.hasConnectedHuman();
+    const botMove = botsActive ? this.findBotMove() : null;
+    const botAt = (p: PlayerState) => Date.now() + botThinkMs(p.botDifficulty ?? 'medium', botRand);
+
     if (this.game.pending) {
       // Keep the Nope window open while anyone may still respond — including the
       // actor, who may play a Nope as a "Yup" when their action is currently
@@ -615,8 +745,14 @@ export class GameRoom {
       const start = (await this.ctx.storage.get<number>('nopeStart')) ?? Date.now();
       await this.ctx.storage.put('nopeStart', start);
       const deadline = Math.min(Date.now() + RULES.nopeWindowMs, start + RULES.maxNopeWindowMs);
-      await this.armAlarm('nope', deadline);
       this.nopeDeadline = deadline;
+      // A bot that wants to Nope acts partway through the window; otherwise the
+      // window just runs to its deadline and resolves.
+      if (botMove && botMove.action.type === 'nope') {
+        await this.armAlarm('bot', Math.min(deadline, botAt(botMove.bot)));
+      } else {
+        await this.armAlarm('nope', deadline);
+      }
       return;
     }
 
@@ -624,11 +760,28 @@ export class GameRoom {
     this.nopeDeadline = null;
 
     if (this.game.awaiting) {
+      // If a bot owes the forced choice, drive it after a short think (a steal
+      // pick also waits out the victim's rearrange grace); otherwise fall back to
+      // the human auto-resolve timer.
+      const actor = botsActive ? this.game.players.find((p) => p.id === this.game.awaiting!.playerId) : undefined;
+      if (actor?.isBot) {
+        let at = botAt(actor);
+        if (this.game.awaiting.type === 'steal_pick' && this.stealPickableAt !== null) {
+          at = Math.max(at, this.stealPickableAt + 50);
+        }
+        await this.armAlarm('bot', at);
+        return;
+      }
       await this.armAlarm('awaiting', Date.now() + RULES.awaitingTimeoutMs);
       return;
     }
     if (this.disconnectedCurrentPlayer()) {
       await this.armAlarm('turn', Date.now() + RULES.turnTimeoutMs);
+      return;
+    }
+    // The current player is a bot: take its turn after a short think.
+    if (botMove) {
+      await this.armAlarm('bot', botAt(botMove.bot));
       return;
     }
     await this.clearAlarm();
@@ -659,12 +812,21 @@ export class GameRoom {
 
   async alarm(): Promise<void> {
     await this.load();
+    const botsActive = this.hasBots() && this.hasConnectedHuman();
+    const botMove = botsActive ? this.findBotMove() : null;
     if (this.game.pending) {
-      await this.resolvePendingNow();
+      // A bot Nope was scheduled inside the window; play it. Otherwise the window
+      // has reached its deadline — resolve the pending action.
+      if (botMove && botMove.action.type === 'nope') await this.runBotMove(botMove);
+      else await this.resolvePendingNow();
     } else if (this.game.awaiting) {
-      await this.autoResolveAwaiting();
+      // The awaiting seat may be a bot (drive it) or a human who timed out.
+      if (botMove) await this.runBotMove(botMove);
+      else await this.autoResolveAwaiting();
     } else if (this.disconnectedCurrentPlayer()) {
       await this.autoAdvanceTurn();
+    } else if (botMove) {
+      await this.runBotMove(botMove);
     }
   }
 

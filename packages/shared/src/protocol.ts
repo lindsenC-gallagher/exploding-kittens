@@ -1,5 +1,5 @@
 import type { Card, CardType } from './cards.js';
-import type { ComboKind, GameEvent, GameOptions, GamePhase } from './state.js';
+import type { BotDifficulty, ComboKind, GameEvent, GameOptions, GamePhase } from './state.js';
 
 /**
  * Wire protocol between the React client and the GameRoom Durable Object.
@@ -17,6 +17,10 @@ export type ClientMessage =
   | { t: 'set_avatar'; avatar: string }
   /** Host-only, lobby-only: toggle one or more house rules. */
   | { t: 'set_options'; options: Partial<GameOptions> }
+  /** Host-only, lobby-only: add a computer-controlled player of the given strength. */
+  | { t: 'add_bot'; difficulty: BotDifficulty }
+  /** Host-only, lobby-only: remove a previously added bot by its player id. */
+  | { t: 'remove_bot'; botId: string }
   | { t: 'start_game' }
   /** Host-only, after a game ends: return everyone to this room's lobby to play again. */
   | { t: 'play_again' }
@@ -44,6 +48,10 @@ export interface PublicPlayer {
   connected: boolean;
   ready: boolean;
   isHost: boolean;
+  /** True for a computer-controlled seat (shown with a bot badge). */
+  isBot: boolean;
+  /** The bot's strength, when {@link isBot}; lets the lobby label it. */
+  botDifficulty?: BotDifficulty;
 }
 
 /**

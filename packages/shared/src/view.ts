@@ -24,6 +24,8 @@ export function projectView(
     connected: p.connected,
     ready: p.ready,
     isHost: p.id === state.hostId,
+    isBot: !!p.isBot,
+    botDifficulty: p.botDifficulty,
   }));
 
   const me = state.players.find((p) => p.id === recipientId);

@@ -12,6 +12,26 @@ export interface PlayerState {
   alive: boolean;
   connected: boolean;
   ready: boolean;
+  /**
+   * True for a computer-controlled seat the host added in the lobby. A bot has
+   * no WebSocket; the server drives its turns through the very same redacted
+   * view and action API a human uses, so a bot can never see the deck or another
+   * player's hand. {@link botDifficulty} tunes how cleverly it plays.
+   */
+  isBot?: boolean;
+  /** How strong this bot plays. Only meaningful when {@link isBot} is true. */
+  botDifficulty?: BotDifficulty;
+}
+
+/** How cleverly a bot plays. Higher tiers reason more about the public state. */
+export type BotDifficulty = 'easy' | 'medium' | 'hard';
+
+/** All bot difficulties, in display order (lobby picker iterates this). */
+export const BOT_DIFFICULTIES: readonly BotDifficulty[] = ['easy', 'medium', 'hard'];
+
+/** Is `v` one of the allowed bot difficulties? Validates untrusted client input. */
+export function isBotDifficulty(v: unknown): v is BotDifficulty {
+  return typeof v === 'string' && (BOT_DIFFICULTIES as readonly string[]).includes(v);
 }
 
 /** Combo kinds playable with matching/distinct cards. */

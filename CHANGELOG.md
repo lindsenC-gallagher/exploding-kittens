@@ -10,6 +10,13 @@ there are no tagged releases. Entries are grouped by date instead of version.
 
 ### Added
 
+- Computer-controlled players. In the lobby the host can now add bots at three
+  strengths: Easy (plays loosely), Medium (avoids obvious risks), and Hard
+  (weighs the odds of exploding from the visible cards, uses combos, and Nopes
+  things aimed at it). Bots take a short, visible beat before each move. They
+  play strictly on the same information you do: a bot can never peek at the deck
+  order or anyone else's hand. The host can remove a bot from the lobby at any
+  time, and bots pause whenever no human is connected to watch.
 - New host option "Starting cards per player". The host can now change how many
   cards each player is dealt at the start (before their guaranteed Defuse),
   anywhere from 1 to 10, with the faithful 7 as the default. Big hands on full

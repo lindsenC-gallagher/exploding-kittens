@@ -2,11 +2,13 @@ import { useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   AVATARS,
+  BOT_DIFFICULTIES,
   MAX_ATTACK_TURNS,
   MAX_STARTING_HAND_SIZE,
   MIN_ATTACK_TURNS,
   MIN_STARTING_HAND_SIZE,
   RULES,
+  type BotDifficulty,
   type ClientGameView,
   type ClientMessage,
   type Theme,
@@ -23,6 +25,13 @@ const THEME_CHOICES: { key: Theme; emoji: string; label: string; hint: string }[
   { key: 'cats', emoji: '🐱', label: 'Cats', hint: 'The classic Exploding Kittens art.' },
   { key: 'dogs', emoji: '🐶', label: 'Dogs', hint: 'Same game, dog card art.' },
 ];
+
+/** Display labels for the bot difficulty tiers. */
+const BOT_LABELS: Record<BotDifficulty, string> = {
+  easy: 'Easy',
+  medium: 'Medium',
+  hard: 'Hard',
+};
 
 /** The boolean house-rule flags (excludes the non-boolean `theme`). */
 type RuleKey = 'allowPairSteal' | 'allowTripleDemand' | 'allowFiveDifferent';
@@ -42,6 +51,10 @@ export function Lobby({ view, send }: LobbyProps) {
   const me = view.players.find((p) => p.id === view.youId);
   const isHost = view.youId === view.hostId;
   const enough = view.players.length >= RULES.minPlayers;
+  const tableFull = view.players.length >= RULES.maxPlayers;
+
+  // Difficulty selected in the "add a bot" picker (host only).
+  const [botDifficulty, setBotDifficulty] = useState<BotDifficulty>('medium');
 
   // Editable display name (lobby-only). Mirrors the authoritative name from the
   // view unless the field is focused, so a server clamp or rename elsewhere
@@ -107,10 +120,24 @@ export function Lobby({ view, send }: LobbyProps) {
                 </span>
                 <span className="row" style={{ gap: 6 }}>
                   {p.isHost && <span className="badge host">HOST</span>}
-                  {p.ready ? (
+                  {p.isBot ? (
+                    <span className="badge">
+                      🤖 BOT{p.botDifficulty ? ` · ${BOT_LABELS[p.botDifficulty]}` : ''}
+                    </span>
+                  ) : p.ready ? (
                     <span className="badge ready">READY</span>
                   ) : (
                     <span className="badge">…</span>
+                  )}
+                  {isHost && p.isBot && (
+                    <button
+                      className="ghost"
+                      title="Remove bot"
+                      aria-label={`Remove ${p.name}`}
+                      onClick={() => send({ t: 'remove_bot', botId: p.id })}
+                    >
+                      ✕
+                    </button>
                   )}
                 </span>
               </motion.div>
@@ -121,6 +148,41 @@ export function Lobby({ view, send }: LobbyProps) {
         <p className="muted" style={{ textAlign: 'center' }}>
           {view.players.length}/{RULES.maxPlayers} players · need {RULES.minPlayers}+ to start
         </p>
+
+        {isHost && (
+          <div className="rules-panel">
+            <div className="row" style={{ justifyContent: 'space-between', marginBottom: 8 }}>
+              <span style={{ fontWeight: 800 }}>🤖 Add a bot</span>
+              <span className="muted" style={{ fontSize: 13 }}>Fair play — bots never peek</span>
+            </div>
+            <div className="row" style={{ gap: 8, flexWrap: 'wrap' }}>
+              <div className="row" style={{ gap: 4 }}>
+                {BOT_DIFFICULTIES.map((d) => (
+                  <button
+                    key={d}
+                    type="button"
+                    className={`secondary ${botDifficulty === d ? 'on' : ''}`}
+                    aria-pressed={botDifficulty === d}
+                    onClick={() => setBotDifficulty(d)}
+                  >
+                    {BOT_LABELS[d]}
+                  </button>
+                ))}
+              </div>
+              <button
+                disabled={tableFull}
+                onClick={() => send({ t: 'add_bot', difficulty: botDifficulty })}
+              >
+                ＋ Add {BOT_LABELS[botDifficulty]} bot
+              </button>
+            </div>
+            {tableFull && (
+              <p className="muted" style={{ textAlign: 'center', fontSize: 12, margin: '6px 0 0' }}>
+                Table is full.
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="stack" style={{ gap: 6, marginBottom: 14 }}>
           <span className="muted" style={{ fontWeight: 800 }}>
