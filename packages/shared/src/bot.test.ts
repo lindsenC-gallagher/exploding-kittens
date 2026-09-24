@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { CardType } from './cards.js';
+import { CardType, RULES } from './cards.js';
 import { addBot, addPlayer, applyAction, createLobby, removeBot, startGame, type GameAction } from './engine.js';
 import { decideBotMove, type Rand } from './bot.js';
 import type { ClientMessage } from './protocol.js';
@@ -117,7 +117,7 @@ describe('addBot / removeBot', () => {
   });
 
   it('refuses to add a bot once the lobby is full or the game has started', () => {
-    let state = lobbyWithBots(0, 9, 'easy'); // maxPlayers = 9
+    let state = lobbyWithBots(0, RULES.maxPlayers, 'easy');
     expect(addBot(state, 'extra', 'easy').ok).toBe(false);
     const started = startGame(lobbyWithBots(2, 0, 'easy'), 1);
     if (started.ok) expect(addBot(started.state, 'late', 'easy').ok).toBe(false);

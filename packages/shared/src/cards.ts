@@ -119,11 +119,11 @@ export const RULES = {
   /** Cards dealt to each player before adding their guaranteed Defuse (original = 7). */
   startingHandSize: 7,
   /**
-   * Min/max players. 2-5 play on a single deck; 6-9 automatically combine two
-   * decks (the faithful "more than 5 players" rule).
+   * Min/max players. 2-5 play on a single deck; every further 5 seats combine
+   * another deck (the faithful "more than 5 players" rule, extended).
    */
   minPlayers: 2,
-  maxPlayers: 9,
+  maxPlayers: 20,
   /** Players a single deck seats; beyond this another deck is combined in. */
   playersPerDeck: 5,
   /** Number of top cards revealed by See the Future. */

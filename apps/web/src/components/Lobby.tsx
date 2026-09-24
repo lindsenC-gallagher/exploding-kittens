@@ -355,7 +355,7 @@ export function Lobby({ view, send }: LobbyProps) {
                 <span className="rule-text">
                   <span className="rule-name">Smaller deck (faster games)</span>
                   <span className="rule-hint">
-                    Trims the deck for big tables (6-9 players) so games finish sooner. Exploding
+                    Trims the deck for big tables (6+ players) so games finish sooner. Exploding
                     Kittens and Defuse are unchanged.
                   </span>
                 </span>
